@@ -89,11 +89,32 @@ export type PendingDecision =
   | { type: "TAKE_DAMAGE"; player: PlayerId; amount: number; critical: boolean }
   /** 8-5-2 / 8-5-3 : placer jusqu'à une carte de sa Zone de Combo dans sa Zone d'Énergie Z. */
   | { type: "COMBO_TO_Z"; player: PlayerId }
-  /** 5-2 : choisir des cartes pendant la résolution d'un effet. */
-  | { type: "CHOOSE_CARDS"; player: PlayerId; min: number; max: number; options: string[]; prompt: string };
+  /** 5-2 : choisir des cartes (visibles) pendant la résolution d'un effet. */
+  | { type: "CHOOSE_CARDS"; player: PlayerId; min: number; max: number; options: string[]; prompt: string }
+  /**
+   * 3-9-2 : choisir des cartes de sa Zone de Vie pendant un effet (« rajoutez à votre main une
+   * carte de vos points de vie »). On choisit des POSITIONS, à l'aveugle.
+   */
+  | { type: "CHOOSE_LIFE"; player: PlayerId; min: number; max: number; prompt: string }
+  /** 9-6-3 : plusieurs [Auto.] du même joueur sont en attente : il choisit laquelle résoudre. */
+  | { type: "CHOOSE_AUTO"; player: PlayerId; options: { id: number; label: string }[] };
 
 /** Une instruction d'effet, au format du fichier de cartes (ex. { do: "draw", count: 1 }). */
 export type EffectStep = Record<string, unknown> & { do: string };
+
+/**
+ * Que faire une fois un effet ou un point de contrôle terminé. Ce sont de simples étiquettes
+ * (et non des fonctions) pour que l'état reste convertible en JSON.
+ */
+export type Continuation =
+  /** Revenir à un timing libre (phase principale, étape d'Attaque...). */
+  | { kind: "restore"; pending: PendingDecision }
+  /** Reprendre le point de contrôle en cours (d'autres [Auto.] peuvent attendre). */
+  | { kind: "checkpoint" }
+  /** 8-1 : après les [Auto.] de la déclaration d'attaque, passer au blocage. */
+  | { kind: "blocker_step" }
+  /** 8-4-9 : après l'étape des Dégâts, passer à l'étape de Fin de Combat. */
+  | { kind: "battle_end_step" };
 
 /**
  * Effet en cours de résolution (9). Il peut s'arrêter pour attendre un choix du joueur,
@@ -102,12 +123,36 @@ export type EffectStep = Record<string, unknown> & { do: string };
 export interface EffectResolution {
   /** Maître de l'effet (« vous », 0-3-2-2). */
   player: PlayerId;
-  /** Carte à l'origine de l'effet. */
-  source: string;
+  /** Carte à l'origine de l'effet (« cette carte »). */
+  source: { uid: string; cardId: string };
   steps: EffectStep[];
   index: number;
-  /** Décision à rétablir une fois l'effet résolu (timing libre d'où l'activation est partie). */
-  resume: PendingDecision;
+  /** Ce qu'il faut faire une fois l'effet résolu. */
+  then: Continuation;
+}
+
+/** Capacité [Auto.] d'une carte, en état de suspens (9-6-2). */
+export interface QueuedAuto {
+  /** Numéro unique (pour que le joueur puisse choisir l'ordre). */
+  id: number;
+  /** Maître de la Capacité. */
+  player: PlayerId;
+  /** Carte qui possède la Capacité (uid + numéro de carte, qui reste connu si elle change de zone). */
+  source: { uid: string; cardId: string };
+  /**
+   * Copie de la Capacité au moment du déclenchement : elle se résout même si la carte a
+   * changé de zone ou perdu ses Capacités entre-temps (9-6-11).
+   */
+  ability: Record<string, unknown>;
+  /** Clé pour les limites « Une fois par tour » / « Limite X ». */
+  abilityKey: string;
+}
+
+/** Modification de puissance temporaire (« +10000 de puissance pour tout le tour »). */
+export interface PowerModifier {
+  uid: string;
+  amount: number;
+  until: "turn" | "battle";
 }
 
 /** Désigne un Leader ou une carte de Combat en jeu. */
@@ -163,5 +208,13 @@ export interface GameState {
    * début de chaque tour. Clé = capacité + carte, valeur = nombre d'utilisations.
    */
   turnUsage: Record<string, number>;
+  /** [Auto.] en état de suspens, en attente du prochain point de contrôle (9-6). */
+  autoQueue: QueuedAuto[];
+  /** Point de contrôle en cours : ce qu'il faudra faire une fois toutes les [Auto.] résolues. */
+  checkpointThen: Continuation | null;
+  /** Prochain numéro d'[Auto.] en suspens. */
+  nextAutoId: number;
+  /** Modifications de puissance temporaires en cours. */
+  powerMods: PowerModifier[];
   result: GameResult | null;
 }

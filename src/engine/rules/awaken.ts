@@ -8,7 +8,8 @@
 import type { CardFace } from "../cards/types";
 import type { Action, GameContext, GameEvent } from "../protocol";
 import type { EffectStep, GameState, PlayerId } from "../state/types";
-import { allSupported, startResolution } from "./effects";
+import { checkCondition } from "./conditions";
+import { startResolution } from "./effects";
 
 /** Face visible du Leader d'un joueur. */
 export function leaderFace(s: GameState, player: PlayerId, ctx: GameContext): CardFace | undefined {
@@ -34,17 +35,16 @@ function awakenAbility(s: GameState, player: PlayerId, ctx: GameContext): Awaken
 }
 
 /** Évalue une condition de Capacité. Renvoie un message si elle n'est pas remplie (ou pas gérée). */
-function checkCondition(s: GameState, player: PlayerId, condition: Record<string, unknown>): string | null {
-  switch (condition["check"]) {
-    case "life_at_most": {
-      // 1-12-1 : les points de vie sont les cartes de la Zone de Vie.
-      const max = condition["value"] as number;
-      const life = s.players[player].life.length;
-      return life <= max ? null : `condition non remplie : ${life} points de vie (il faut ${max} ou moins)`;
-    }
-    default:
-      return `condition pas encore gérée : ${String(condition["check"])}`;
+function conditionError(s: GameState, player: PlayerId, condition: Record<string, unknown>, ctx: GameContext): string | null {
+  if (condition["check"] === "life_at_most") {
+    // 1-12-1 : les points de vie sont les cartes de la Zone de Vie.
+    const max = condition["value"] as number;
+    const life = s.players[player].life.length;
+    return life <= max ? null : `condition non remplie : ${life} points de vie (il faut ${max} ou moins)`;
   }
+  const ok = checkCondition(s, player, condition, ctx.cards);
+  if (ok === null) return `condition pas encore gérée : ${String(condition["check"])}`;
+  return ok ? null : "condition non remplie";
 }
 
 /** Pourquoi le joueur ne peut pas s'éveiller maintenant (null = il peut). */
@@ -52,11 +52,11 @@ export function awakenBlocker(s: GameState, player: PlayerId, ctx: GameContext):
   const ability = awakenAbility(s, player, ctx);
   if (!ability) return "22-2 : la face visible de votre Leader n'a pas de Capacité [Éveil]";
   for (const c of ability.condition) {
-    const error = checkCondition(s, player, c);
+    const error = conditionError(s, player, c, ctx);
     if (error) return `22-2-3 : ${error}`;
   }
   if (ability.cost.length > 0) return "22-2-3 : coût de Capacité pas encore géré";
-  if (!allSupported(ability.effect)) return "effet d'[Éveil] pas encore géré par le moteur";
+  // Les parties d'effet non gérées sont ignorées et signalées pendant la résolution.
   return null;
 }
 
@@ -74,6 +74,14 @@ export function activateAwaken(
   events.push({ type: "AWAKEN_ACTIVATED", player: action.player });
   // 22-2-4 : effectuez les effets indiqués ; si la carte est de côté face, tournez-la côté dos.
   const steps: EffectStep[] = [...ability.effect, ...(leader.side === "front" ? [{ do: "flip_leader" }] : [])];
-  startResolution(s, action.player, leader.uid, steps, s.pending!, events);
+  startResolution(
+    s,
+    ctx,
+    action.player,
+    { uid: leader.uid, cardId: leader.cardId },
+    steps,
+    { kind: "restore", pending: s.pending! },
+    events,
+  );
   return null;
 }

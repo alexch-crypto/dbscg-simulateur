@@ -70,6 +70,10 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     battle: null,
     resolving: null,
     turnUsage: {},
+    autoQueue: [],
+    checkpointThen: null,
+    nextAutoId: 1,
+    powerMods: [],
     result: null,
   };
   const events: GameEvent[] = [];

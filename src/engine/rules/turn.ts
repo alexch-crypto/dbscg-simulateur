@@ -14,8 +14,10 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   s.turnPlayer = player;
   s.turnNumber = turnNumber;
   s.phase = "charge";
-  // Les compteurs « une fois par tour / X fois par tour » repartent de zéro.
+  // Les compteurs « une fois par tour / X fois par tour » repartent de zéro, et les effets
+  // « pour tout le tour » du tour précédent sont terminés (7-4-6).
   s.turnUsage = {};
+  s.powerMods = s.powerMods.filter((m) => m.until !== "turn");
   events.push({ type: "TURN_STARTED", player, turnNumber });
 
   // 7-2-2 à 7-2-5 : effets « pour tout le tour », fin des effets « jusqu'au début du tour

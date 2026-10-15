@@ -39,7 +39,7 @@ describe("22-2 : [Éveil] du Leader Freezer", () => {
       min: 0,
       max: 1,
       options: [tired.uid], // seulement les Énergies en mode Inertie
-      prompt: "Choisissez jusqu'à 1 Énergie(s) à passer en mode Action",
+      prompt: "Choisissez jusqu'à 1 carte(s) à passer en mode Action",
     });
     expect(r.state.players.P2.leader.side).toBe("front"); // pas encore retourné
 
@@ -47,7 +47,7 @@ describe("22-2 : [Éveil] du Leader Freezer", () => {
     r = play(r.state, { type: "CHOOSE_CARDS", player: "P2", uids: [tired.uid] });
     expect(r.state.players.P2.energy.every((c) => c.mode === "active")).toBe(true);
     expect(r.state.players.P2.leader.side).toBe("back");
-    expect(r.events.map((e) => e.type)).toEqual(["ENERGY_SET_ACTIVE", "LEADER_FLIPPED"]);
+    expect(r.events.map((e) => e.type)).toEqual(["CARDS_MODE_CHANGED", "LEADER_FLIPPED"]);
     expect(r.state.pending).toEqual({ type: "MAIN", player: "P2" });
     expect(r.state.resolving).toBeNull();
   });

@@ -9,8 +9,10 @@ import type { Action, GameContext, GameEvent } from "../protocol";
 import { opponentOf, type CardInstance, type CardRef, type GameState, type PlayerId } from "../state/types";
 import { checkDefeat } from "./defeat";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
+import { checkpoint, queueTriggers } from "./autos";
 import { cardHasKeyword, hasKeyword, KW, readyAfterBattleCount, removeIfUltimate, strikeDamage } from "./keywords";
 import { payEnergy } from "./play";
+import { forgetCard, koBattleCard } from "./zones";
 
 // ---------------------------------------------------------------------------
 // Outils
@@ -26,16 +28,20 @@ function findInPlay(s: GameState, player: PlayerId, uid: string): InPlay | null 
   return card ? { kind: "battle", card } : null;
 }
 
-/** Puissance d'un Leader (selon sa face) ou d'une carte de Combat (2-7). Modificateurs : à venir. */
+/** Puissance d'un Leader (selon sa face) ou d'une carte de Combat (2-7), avec les effets en cours. */
 export function powerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
   const found = findInPlay(s, ref.player, ref.uid);
   if (!found) return 0;
+  let base: number;
   if (found.kind === "leader") {
     const leader = s.players[ref.player].leader;
     const def = ctx.cards.get(leader.cardId);
-    return (leader.side === "front" ? def?.front?.power : def?.back?.power) ?? 0;
+    base = (leader.side === "front" ? def?.front?.power : def?.back?.power) ?? 0;
+  } else {
+    base = ctx.cards.get(found.card.cardId)?.power ?? 0;
   }
-  return ctx.cards.get(found.card.cardId)?.power ?? 0;
+  // 9-9-1 : on part de la valeur imprimée, puis on applique les effets continus chiffrés.
+  return base + s.powerMods.filter((m) => m.uid === ref.uid).reduce((total, m) => total + m.amount, 0);
 }
 
 /** Déplace une carte vers la Zone de Dispersion de son propriétaire. */
@@ -116,13 +122,22 @@ export function declareAttack(
   if ((s.turnUsage[usageKey] ?? 0) < readyAfterBattleCount(s, attackerRef, ctx.cards)) {
     s.battle.pendingAutos.push({ kind: "dual_attack", card: attackerRef, usageKey });
   }
-  // [Bloqueur] : le défenseur choisit au plus un Bloqueur.
+  // Ordre (décision du joueur, conforme à 8-1-3 / 8-1-5) : fenêtre de contre (à venir), puis
+  // les [Auto.] « quand cette carte attaque » (joueur actif) et « quand cette carte est
+  // attaquée » (joueur non actif), puis seulement le blocage.
+  queueTriggers(s, { event: "attacks", ref: attackerRef }, ctx, events);
+  queueTriggers(s, { event: "attacked", ref: targetRef }, ctx, events);
+  checkpoint(s, ctx, { kind: "blocker_step" }, events);
+  return null;
+}
+
+/** 22-4 : étape de blocage — le défenseur choisit au plus un Bloqueur, s'il en a. */
+export function startBlockerStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
   if (possibleBlockers(s, ctx).length > 0) {
-    s.pending = { type: "BLOCKER", player: defenderPlayer };
+    s.pending = { type: "BLOCKER", player: s.battle!.target.player };
   } else {
     startOffenseStep(s, events);
   }
-  return null;
 }
 
 /** 22-4 : le défenseur active (ou non) [Bloqueur]. */
@@ -220,9 +235,11 @@ export function combo(
   if (error) return error;
 
   // 5-7-5-2 / 5-7-6-2 : la carte est placée dans la Zone de Combo.
+  const resume = s.pending!;
   const p = s.players[action.player];
   const zone = candidate.from === "hand" ? p.hand : p.battle;
   zone.splice(zone.indexOf(candidate.card), 1);
+  if (candidate.from === "battle") forgetCard(s, candidate.card.uid);
   // 22-14-3 : une carte [Ultimate] qui quitte la Zone de Combat est retirée de la partie à la place.
   const removed = candidate.from === "battle" && removeIfUltimate(s, candidate.card, ctx.cards);
   if (!removed) {
@@ -241,8 +258,11 @@ export function combo(
   });
   if (removed) {
     events.push({ type: "CARD_REMOVED", player: action.player, uid: candidate.card.uid, cardId: candidate.card.cardId });
+  } else {
+    queueTriggers(s, { event: "used_in_combo", card: candidate.card }, ctx, events);
   }
   // 5-7-5-3 : point de contrôle. 5-7-5-4 : le joueur peut continuer à faire des Combos.
+  checkpoint(s, ctx, { kind: "restore", pending: resume }, events);
   return null;
 }
 
@@ -294,19 +314,13 @@ function damageStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
       dealDamage(s, battle.defender.player, amount, critical, events);
       if (s.pending) return; // le joueur doit d'abord choisir ses cartes de Vie
     } else if (defender?.kind === "battle") {
-      // 8-4-6-2-1 : la carte de défense est mise KO (5-12-1 : placée dans la Dispersion).
-      const owner = s.players[battle.defender.player];
-      owner.battle.splice(owner.battle.indexOf(defender.card), 1);
-      events.push({ type: "CARD_KO", player: battle.defender.player, uid: defender.card.uid, cardId: defender.card.cardId });
-      // 22-14-3 : une carte [Ultimate] est retirée de la partie au lieu d'aller en Dispersion.
-      if (removeIfUltimate(s, defender.card, ctx.cards)) {
-        events.push({ type: "CARD_REMOVED", player: battle.defender.player, uid: defender.card.uid, cardId: defender.card.cardId });
-      } else {
-        toDrop(s, defender.card);
-      }
+      // 8-4-6-2-1 : la carte de défense est mise KO (5-12-1 : placée dans la Dispersion ;
+      // 22-14-3 : retirée de la partie si elle a [Ultimate]).
+      koBattleCard(s, ctx, battle.defender.player, defender.card, events);
     }
   }
-  afterDamage(s, events);
+  // 8-4-8 : point de contrôle (ex. « quand cette carte est mise KO »), puis 8-4-9.
+  checkpoint(s, ctx, { kind: "battle_end_step" }, events);
 }
 
 /** 5-10 / 21-3 : infliger X dégâts à un joueur. */
@@ -365,11 +379,12 @@ export function takeLife(
   s.pending = null;
   // 21-2 : défaite immédiate si la Zone de Vie est vide.
   if (checkDefeat(s, events)) return null;
-  afterDamage(s, events);
+  battleEndStep(s, events);
   return null;
 }
 
-function afterDamage(s: GameState, events: GameEvent[]): void {
+/** 8-4-7 à 8-5 : fin de l'étape des Dégâts, puis étape de Fin de Combat. */
+export function battleEndStep(s: GameState, events: GameEvent[]): void {
   // 8-4-7 : capacités « Quand l'étape des Dégâts se termine ». 8-4-8 : point de contrôle.
   // 8-4-9 : passez à l'étape de Fin de Combat.
   s.battle!.step = "end";
@@ -440,6 +455,7 @@ function finishBattle(s: GameState, events: GameEvent[]): void {
     }
   }
   // 8-5-11 / 8-5-12 : fin des effets « pour tout le combat ».
+  s.powerMods = s.powerMods.filter((m) => m.until !== "battle");
   // 8-5-13 : le combat s'achève, retour à 7-3-3.
   events.push({ type: "BATTLE_ENDED" });
   backToMain(s);

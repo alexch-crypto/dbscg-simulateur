@@ -15,6 +15,7 @@ import {
   type EnergyPayment,
   type EnergySource,
 } from "./energy";
+import { checkpoint, queueTriggers } from "./autos";
 import { uniqueBlocks } from "./keywords";
 
 /**
@@ -115,6 +116,9 @@ export function playBattleCard(
     energyRested: [...action.payment.energy],
     markersUsed: action.payment.markers,
   });
-  // Point de contrôle suivant : capacités « Quand cette carte est jouée » (pas encore gérées).
+  // 9-6-9-4 : « Quand cette carte est jouée » se met en suspens ; point de contrôle, puis
+  // retour au timing libre de la phase principale.
+  queueTriggers(s, { event: "played", card: instance }, ctx, events);
+  checkpoint(s, ctx, { kind: "restore", pending: { type: "MAIN", player: action.player } }, events);
   return null;
 }

@@ -97,6 +97,12 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       return "Éveil du Leader";
     case "CHOOSE_CARDS":
       return a.uids.length === 0 ? "Ne rien choisir" : `Choisir : ${a.uids.map((u) => nameOf(view, db, u)).join(", ")}`;
+    case "CHOOSE_LIFE":
+      return a.indices.length === 0 ? "Ne prendre aucune carte de Vie" : `Prendre la carte de Vie ${a.indices.map((i) => `n°${i + 1}`).join(" + ")}`;
+    case "CHOOSE_AUTO": {
+      const option = view.pending?.type === "CHOOSE_AUTO" ? view.pending.options.find((o) => o.id === a.id) : undefined;
+      return `Résoudre d'abord : ${option?.label ?? `capacité n°${a.id}`}`;
+    }
   }
 }
 
@@ -124,7 +130,10 @@ export function describePending(p: PendingDecision | null): string {
     case "COMBO_TO_Z":
       return "Fin du combat : placez une de vos cartes de Combo en Énergie Z (facultatif).";
     case "CHOOSE_CARDS":
+    case "CHOOSE_LIFE":
       return p.prompt;
+    case "CHOOSE_AUTO":
+      return "Plusieurs de vos capacités [Auto.] se déclenchent : choisissez laquelle résoudre en premier.";
   }
 }
 
@@ -205,8 +214,18 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `${e.player} active l'Éveil de son Leader !`;
     case "LEADER_FLIPPED":
       return `Le Leader de ${e.player} se retourne (${e.side === "back" ? "face arrière" : "face avant"}).`;
-    case "ENERGY_SET_ACTIVE":
-      return `${e.player} repasse ${e.uids.map(n).join(", ")} en mode Action.`;
+    case "CARDS_MODE_CHANGED":
+      return `${e.uids.map(n).join(", ")} ${e.uids.length > 1 ? "passent" : "passe"} en mode ${e.mode === "rest" ? "Inertie" : "Action"}.`;
+    case "AUTO_TRIGGERED":
+      return `[Auto.] de ${cardName(db, e.cardId)} (${e.player}) se déclenche.`;
+    case "AUTO_CANCELLED":
+      return `[Auto.] de ${cardName(db, e.cardId)} ne se résout pas : ${e.reason}.`;
+    case "NOT_IMPLEMENTED":
+      return `⚠ ${cardName(db, e.cardId)} : partie non gérée par le moteur — ${e.what}`;
+    case "POWER_MODIFIED":
+      return `${n(e.uid)} : ${e.amount > 0 ? "+" : ""}${e.amount} de puissance pour tout le ${e.until === "turn" ? "tour" : "combat"}.`;
+    case "LIFE_TO_HAND":
+      return `${e.player} rajoute à sa main sa/ses carte(s) de Vie ${e.indices.map((i, k) => `n°${i + 1}${e.cardIds[k] ? ` (${cardName(db, e.cardIds[k]!)})` : ""}`).join(", ")}.`;
     case "GAME_OVER":
       return e.result.kind === "win"
         ? `★ Fin de la partie : ${e.result.winner} gagne (${e.result.reason}).`

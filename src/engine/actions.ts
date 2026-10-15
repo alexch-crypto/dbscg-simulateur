@@ -5,7 +5,8 @@
 import type { Action, GameContext, GameEvent } from "./protocol";
 import { activateAwaken } from "./rules/awaken";
 import { combo, comboToZEnergy, declareAttack, declareBlocker, endStep, takeLife } from "./rules/battle";
-import { answerChoice } from "./rules/effects";
+import { chooseAuto } from "./rules/autos";
+import { answerChoice, answerLife } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
 import { playBattleCard } from "./rules/play";
 import { chooseFirstPlayer, mulligan } from "./rules/setup";
@@ -30,6 +31,8 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   TAKE_DAMAGE: ["TAKE_LIFE"],
   COMBO_TO_Z: ["COMBO_TO_Z_ENERGY"],
   CHOOSE_CARDS: ["CHOOSE_CARDS"],
+  CHOOSE_LIFE: ["CHOOSE_LIFE"],
+  CHOOSE_AUTO: ["CHOOSE_AUTO"],
 };
 
 /** Vérifie que l'action répond bien à la décision attendue. Renvoie un message d'erreur sinon. */
@@ -105,6 +108,12 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       break;
     case "CHOOSE_CARDS":
       error = answerChoice(next, action, ctx, events);
+      break;
+    case "CHOOSE_LIFE":
+      error = answerLife(next, action, ctx, events);
+      break;
+    case "CHOOSE_AUTO":
+      error = chooseAuto(next, action, ctx, events);
       break;
     default: {
       const unknown: never = action;

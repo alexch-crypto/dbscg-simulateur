@@ -90,6 +90,16 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
         if (!awakenBlocker(s, player, ctx)) actions.push({ type: "AWAKEN", player });
         actions.push({ type: "END_STEP", player });
         break;
+      case "CHOOSE_LIFE": {
+        const n = s.players[player].life.length;
+        for (let k = pending.min; k <= pending.max; k++) {
+          for (const indices of combinations(n, k)) actions.push({ type: "CHOOSE_LIFE", player, indices });
+        }
+        break;
+      }
+      case "CHOOSE_AUTO":
+        for (const option of pending.options) actions.push({ type: "CHOOSE_AUTO", player, id: option.id });
+        break;
       case "CHOOSE_CARDS": {
         // Choix possibles : aucune carte (si permis), chaque carte seule, et les `max` premières.
         // (Toutes les combinaisons seraient trop nombreuses ; tout choix valide reste accepté.)

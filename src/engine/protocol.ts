@@ -36,7 +36,11 @@ export type Action =
   /** 22-2 : activer l'[Éveil] de son Leader (phase principale, étape d'Attaque ou de Défense). */
   | { type: "AWAKEN"; player: PlayerId }
   /** 5-2 : répondre à une demande de choix pendant la résolution d'un effet. */
-  | { type: "CHOOSE_CARDS"; player: PlayerId; uids: string[] };
+  | { type: "CHOOSE_CARDS"; player: PlayerId; uids: string[] }
+  /** Choisir des positions de sa Zone de Vie pendant un effet (0 = première). */
+  | { type: "CHOOSE_LIFE"; player: PlayerId; indices: number[] }
+  /** 9-6-3 : choisir quelle [Auto.] en attente résoudre maintenant. */
+  | { type: "CHOOSE_AUTO"; player: PlayerId; id: number };
 
 /** Ce que le joueur passe en mode Inertie pour payer : ses Énergies (uids) et des marqueurs Énergie. */
 export interface PaymentChoice {
@@ -96,7 +100,16 @@ export type GameEvent =
   | { type: "BATTLE_ENDED" }
   | { type: "AWAKEN_ACTIVATED"; player: PlayerId }
   | { type: "LEADER_FLIPPED"; player: PlayerId; side: "front" | "back" }
-  | { type: "ENERGY_SET_ACTIVE"; player: PlayerId; uids: string[] }
+  /** Une [Auto.] se met en suspens (9-6-2). */
+  | { type: "AUTO_TRIGGERED"; player: PlayerId; uid: string; cardId: string }
+  /** Une [Auto.] en attente ne se résout pas (limite atteinte, condition non remplie...). */
+  | { type: "AUTO_CANCELLED"; player: PlayerId; cardId: string; reason: string }
+  /** Une partie d'effet que le moteur ne sait pas encore faire a été ignorée. */
+  | { type: "NOT_IMPLEMENTED"; player: PlayerId; cardId: string; what: string }
+  | { type: "CARDS_MODE_CHANGED"; uids: string[]; mode: "active" | "rest" }
+  | { type: "POWER_MODIFIED"; uid: string; amount: number; until: "turn" | "battle" }
+  /** Cartes de Vie rajoutées à la main par un effet (cardIds connus seulement si face visible). */
+  | { type: "LIFE_TO_HAND"; player: PlayerId; indices: number[]; cardIds: (string | null)[] }
   | { type: "GAME_OVER"; result: GameResult };
 
 /** Informations fixes dont le moteur a besoin (la base de cartes). */

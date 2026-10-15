@@ -38,7 +38,7 @@ describe("8-1 : déclaration d'attaque", () => {
   it("une carte jouée ce tour-ci peut attaquer tout de suite (pas de « mal d'invocation »)", () => {
     const s = p2Main();
     const e = [give(s, "P2", "BT24-105", "energy"), give(s, "P2", "BT24-106", "energy"), give(s, "P2", "BT9-123", "energy")];
-    const freezer = give(s, "P2", "BT24-105", "hand");
+    const freezer = give(s, "P2", "BT24-068", "hand"); // Krillin (coût 3, pas d'[Auto.])
     const after = play(s, {
       type: "PLAY_CARD",
       player: "P2",
