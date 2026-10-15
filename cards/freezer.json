@@ -1,0 +1,1097 @@
+{
+  "_info": {
+    "source": "Texte français relu sur les proxies du joueur (Proxies — frigo). Règles : manuel officiel DBS Masters v4.00 (EN) / v3.02 (FR).",
+    "verifier": "Les champs dont la valeur commence par '?' ou listés dans 'a_verifier' n'ont pas pu être lus avec certitude sur les images.",
+    "langue_texte": "fr",
+    "format_effets": "Voir LISEZMOI-cartes.md pour le vocabulaire des déclencheurs, conditions, coûts et actions."
+  },
+
+  "deck": {
+    "leader": "BT24-056",
+    "main": {
+      "BT1-107": 1, "BT10-075": 1, "BT10-088": 3, "BT14-082": 1, "BT24-068": 2,
+      "BT24-105": 3, "BT24-106": 3, "BT24-133": 4, "BT24-134": 2, "BT24-136": 3,
+      "BT27-076": 2, "BT27-080": 4, "BT27-136": 4, "BT3-104": 2, "BT9-123": 4,
+      "BT9-137": 1, "EB1-037": 2, "P-055": 2, "P-223": 2, "P-561": 3, "SD8-04": 4
+    },
+    "side": { "EX19-12": 4 },
+    "z_deck": {
+      "BT22-060": 1, "BT24-057": 1, "BT24-059": 2, "BT25-102": 1,
+      "BT25-141": 1, "BT28-081": 1, "BT29-107": 1, "P-405": 1
+    },
+    "_note": "Main deck = 53 cartes (légal : 50 à 60). Le Side Deck n'existe pas en partie : il sert aux échanges entre manches en tournoi, le moteur peut l'ignorer."
+  },
+
+  "cards": [
+    {
+      "id": "BT24-056",
+      "type": "leader",
+      "front": {
+        "name": "Freezer",
+        "colors": ["green"],
+        "power": 10000,
+        "character": ["Freezer"],
+        "traits": ["Clan de Freezer", "Armée de Freezer"],
+        "era": "Freezer",
+        "keywords": [],
+        "abilities": [
+          {
+            "kind": "activate", "timing": "main",
+            "limits": { "once_per_turn": true },
+            "cost": [{ "do": "life_to_hand", "count": 1 }],
+            "effect": [
+              { "do": "look_top_deck", "count": 5,
+                "pick": { "up_to": 1, "filter": { "character": "Freezer", "colors_any": ["green", "yellow"] }, "to": "hand", "reveal": true },
+                "then": "shuffle_deck" }
+            ],
+            "text": "Activation : Principale / Une fois par tour — Rajoutez à votre main une carte de vos points de vie : Regardez jusqu'à cinq cartes du dessus de votre deck, rajoutez à votre main jusqu'à un <Freezer> vert ou jaune, puis mélangez votre deck."
+          },
+          {
+            "kind": "awaken",
+            "condition": [{ "check": "life_at_most", "value": 4 }],
+            "effect": [
+              { "do": "draw", "count": 1 },
+              { "do": "set_active", "target": { "zone": "energy", "owner": "self", "up_to": 1 } }
+            ],
+            "text": "Éveil — Quand votre total de points de vie est de 4 ou moins : Piochez une carte et passez jusqu'à une de vos Énergies en mode Action."
+          }
+        ]
+      },
+      "back": {
+        "name": "Freezer, Fléau des Saiyans",
+        "colors": ["green"],
+        "power": 15000,
+        "character": ["Freezer"],
+        "traits": ["Clan de Freezer", "Armée de Freezer"],
+        "era": "Freezer",
+        "keywords": [],
+        "abilities": [
+          {
+            "kind": "permanent",
+            "effect": [
+              { "do": "successor_may_use_opponent_cards",
+                "applies_to": { "zone": "hand", "character": "Freezer" },
+                "limits": { "once_per_turn": true },
+                "treat_as": "mono_green_battle_card" }
+            ],
+            "text": "Permanent — Quand vous choisissez des cartes de Combat pour le coût de la Capacité Successeur d'un <Freezer> dans votre main, une fois par tour, vous pouvez choisir n'importe quel nombre de cartes de Combat adverses en tant que cartes de Combat exclusivement vertes."
+          },
+          {
+            "kind": "auto",
+            "trigger": { "event": "attacks", "who": "this" },
+            "effect": [{ "do": "draw", "count": 1 }],
+            "text": "Auto. — Quand cette carte attaque, piochez une carte."
+          },
+          {
+            "kind": "activate", "timing": "battle",
+            "limits": { "once_per_turn": true },
+            "cost": [{ "do": "spirit_boost", "markers": 1 }],
+            "effect": [
+              { "do": "combo_from", "zone": "hand", "up_to": 1,
+                "filter": { "multicolor_exact": ["green", "yellow"], "combo_cost": 1 },
+                "negate_skills": "turn" }
+            ],
+            "text": "Activation : Combat / Une fois par tour / Boost d'Esprit 1 — Utilisez jusqu'à une carte multicolore vert-jaune avec un coût de Combo 1 depuis votre main pour une Combo avec ses Capacités annulées pour tout le tour."
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "BT1-107",
+      "type": "extra",
+      "name": "Soif de sang glaciale",
+      "colors": ["yellow"],
+      "cost": { "total": 1, "specified": { "yellow": 1 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "play",
+          "condition": [{ "check": "leader_has_trait", "value": "Armée de Freezer" }],
+          "effect": [{ "do": "negate_skills", "target": "played_battle_card", "duration": "turn" }],
+          "text": "Contre : Mise en jeu — Si votre Leader est «Armée de Freezer», la carte de Combat jouée voit sa capacité annulée pour toute la durée du tour."
+        }
+      ],
+      "a_verifier": ["Note : le Leader Freezer est «Clan de Freezer/Armée de Freezer», la condition est donc remplie."]
+    },
+
+    {
+      "id": "BT10-075",
+      "type": "battle",
+      "name": "Freezer, Méchant charismatique",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 1 } },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "play",
+          "cost": [{ "do": "self_restriction", "rule": "cannot_activate_other_counter_play", "duration": "turn" }],
+          "pays_energy_cost_of_card": true,
+          "effect": [{ "do": "play_self", "from": "hand" }],
+          "text": "Contre : Mise en jeu — Vous ne pouvez pas activer les Capacités Contre : Mise en jeu des autres cartes pour toute la durée du tour : Jouez cette carte depuis votre main."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "control_unison", "filter": { "colors_any": ["green"], "min_markers": 2 } }],
+          "effect": [{ "do": "counter_without_energy_cost", "card": "this" }],
+          "text": "Permanent — Quand vous avez une carte Unisson verte en jeu avec deux marqueurs ou plus dessus, vous pouvez activer la Capacité Contre de cette carte depuis votre main sans payer son coût d'énergie."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [{ "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "cost_at_most": 7 } } }],
+          "text": "Auto. — Quand cette carte est jouée, choisissez jusqu'à une carte de Combat adverse avec un coût d'énergie de sept ou moins et mettez-la KO."
+        }
+      ],
+      "a_verifier": ["Orbe de couleur du coût (1 vert supposé).", "Couleur de la carte (verte supposée)."]
+    },
+
+    {
+      "id": "BT10-088",
+      "type": "extra",
+      "name": "Potentiel latent libéré (Dormant Potential Unleashed)",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "condition": [{ "check": "leader_mono_color", "value": "green" }],
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "any_number": true, "total_cost_at_most": 2 } },
+            { "do": "optional", "cost": [{ "do": "discard", "count": 1, "filter": { "colors_any": ["green"] } }],
+              "then": [{ "do": "limit_opponent_attacks", "remaining": 1, "duration": "turn" }] }
+          ],
+          "text": "Contre : Attaque — Si votre Leader est exclusivement vert : Choisissez n'importe quel nombre de cartes de Combat adverses dont le total des coûts d'énergie est de 2 ou moins et mettez-les KO. De plus, vous pouvez défausser une carte verte de votre main. Si vous le faites, votre adversaire ne peut plus attaquer qu'une seule fois ce tour."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "control_unison", "filter": { "colors_any": ["green"] } }],
+          "effect": [{ "do": "counter_without_energy_cost", "card": "this" }],
+          "text": "Permanent — Si vous avez une Unisson verte en jeu, vous pouvez activer la Capacité Contre de cette carte depuis votre main sans payer son coût d'énergie."
+        }
+      ],
+      "a_verifier": ["Tes exemplaires sont en anglais : texte traduit par moi."]
+    },
+
+    {
+      "id": "BT14-082",
+      "type": "battle",
+      "name": "Boo, Malveillance pure et simple",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": { "green": 1 } },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Boo"],
+      "traits": ["Majin"],
+      "era": "Boo",
+      "keywords": ["union_absorb"],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "condition": [{ "check": "leader_color", "value": "green" }],
+          "pays_energy_cost_of_card": true,
+          "effect": [
+            { "do": "negate_attack" },
+            { "do": "play_self", "from": "hand" },
+            { "do": "if_previous_succeeded", "then": [
+              { "do": "discard", "count": 1 },
+              { "do": "opponent_attack_tax", "rule": "discard_2_per_attack", "duration": "turn" }
+            ] }
+          ],
+          "text": "Contre : Attaque — Si votre Leader est vert : Annulez l'attaque et jouez cette carte. Si vous avez joué une carte ainsi, choisissez une carte de votre main et défaussez-la ; votre adversaire ne peut pas attaquer pour toute la durée du tour à moins de choisir deux cartes de sa main et de les défausser à chaque fois."
+        },
+        {
+          "kind": "union_absorb",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "move_card_under", "from": "under_leader", "leader_trait": "Majin", "to": "under_this" }],
+          "effect": [{ "do": "play_on_top_of_this", "from": ["deck", "drop"], "up_to": 1,
+                       "filter": { "character": "Boo", "mono_color": "green", "cost": 4, "power": 15000 },
+                       "then": "shuffle_deck_if_searched" }],
+          "text": "Union-Absorption / Une fois par tour — Choisissez une carte sous votre Leader «Majin» et placez-la sous cette carte : Jouez jusqu'à un <Boo> exclusivement vert avec un coût d'énergie de quatre et 15000 de puissance depuis votre deck ou votre Zone de Dispersion par-dessus cette carte, puis mélangez votre deck si vous avez regardé à l'intérieur."
+        }
+      ],
+      "a_verifier": ["Avec ton Leader Freezer, l'Union-Absorption ne peut jamais s'activer (pas de Leader «Majin»). On peut la coder plus tard."]
+    },
+
+    {
+      "id": "BT24-068",
+      "type": "battle",
+      "name": "Krillin, Désagrégation",
+      "colors": ["green"],
+      "cost": { "total": 3, "specified": { "green": 1 } },
+      "power": 15000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Krillin"],
+      "traits": ["Terrien"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "condition": [
+            { "check": "leader_character_and_color", "character": "Freezer", "color": "green" },
+            { "check": "control_z_unison", "filter": { "colors_any": ["green"] } },
+            { "check": "opponent_battle_card_count", "value": 0 }
+          ],
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "play_self", "from": "hand", "to": "opponent_battle_area", "mode": "rest" }
+          ],
+          "text": "Activation : Principale / Limite 1 — Si votre Leader est un <Freezer> vert, que vous avez une Unisson Z verte en jeu et que votre adversaire n'a pas de cartes de Combat en jeu : Piochez une carte et jouez cette carte depuis votre main dans la Zone de Combat adverse en mode Inertie."
+        }
+      ],
+      "a_verifier": ["Joué chez l'adversaire, Krillin appartient toujours à son propriétaire (règle 0-3-3) mais son maître devient l'adversaire (0-3-4-1). Utile pour le coût de Successeur via le verso du Leader."]
+    },
+
+    {
+      "id": "BT24-105",
+      "type": "battle",
+      "name": "Freezer, Départ de l'Invasion",
+      "colors": ["yellow"],
+      "cost": { "total": 3, "specified": { "yellow": 2 } },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "life_to_hand", "up_to": 1 },
+            { "do": "set_rest", "target": { "owner": "opponent", "zone": "battle", "up_to": 1 } }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, rajoutez à votre main jusqu'à une carte de vos points de vie, choisissez jusqu'à une carte de Combat adverse et passez la carte en mode Inertie."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "yellow": 1 } }],
+          "condition": [
+            { "check": "leader_character_and_color", "character": "Freezer", "color": "green" },
+            { "check": "energy_count_with_color", "color": "green", "min": 1 },
+            { "check": "energy_count_with_color", "color": "yellow", "min": 1 }
+          ],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale / Limite 1 — (jaune), si votre Leader est un <Freezer> vert et que vous avez une Énergie verte ou plus et une Énergie jaune ou plus de chaque : Piochez une carte et jouez cette carte depuis votre main."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "declare_number", "min": 0, "max": 3, "as": "X" }],
+          "effect": [{ "do": "modify_energy_cost", "target": "this", "amount": "+X", "duration": "turn" }],
+          "text": "Activation : Principale / Une fois par tour — Déclarez un nombre égal ou inférieur à 3 : Augmentez du nombre déclaré le coût d'énergie de cette carte pour tout le tour."
+        }
+      ],
+      "a_verifier": ["Le coût augmenté sert à payer un Successeur (somme des coûts des cartes sacrifiées)."]
+    },
+
+    {
+      "id": "BT24-106",
+      "type": "battle",
+      "name": "Freezer, Autorité oppressive",
+      "colors": ["yellow"],
+      "cost": { "total": 3, "specified": { "yellow": 2 } },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "life_to_hand", "up_to": 1 },
+            { "do": "lock_active", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "mode": "rest" } },
+              "duration": "opponent_next_charge_phase" }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, rajoutez à votre main jusqu'à une carte de vos points de vie et choisissez jusqu'à une carte de Combat adverse en mode Inertie ; la carte ne peut pas passer en mode Action pendant la phase de Recharge suivante de votre adversaire."
+        },
+        { "same_as": "BT24-105", "ability_index": 1 },
+        { "same_as": "BT24-105", "ability_index": 2 }
+      ]
+    },
+
+    {
+      "id": "BT24-133",
+      "type": "battle",
+      "name": "Freezer, Activation de l'Overdrive",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 10, "specified": "?{ green: 3, yellow: 3 }" },
+      "power": 30000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": ["energy_exhaust", "deflect", "double_strike", "dual_attack", "successor"],
+      "abilities": [
+        {
+          "kind": "successor",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1, "yellow": 1 }, "generic": 1 }, { "do": "draw", "count": 2 }],
+          "text": "Successeur — (vert)(jaune)(1), piochez deux cartes."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "energy_has_other_card", "filter": { "multicolor_exact": ["green", "yellow"] } }],
+          "effect": [{ "do": "negate_keyword", "keyword": "energy_exhaust", "target": "this", "zones": "all" }],
+          "text": "Permanent — S'il y a une carte multicolore vert-jaune autre que cette carte parmi vos Énergies, annulez la Capacité Fuite d'énergie de cette carte dans toutes les zones."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [{ "do": "opponent_attack_tax", "rule": "rest_one_active_card_per_attack", "duration": "until_end_of_opponent_turn" }],
+          "text": "Auto. — Quand cette carte est jouée, votre adversaire ne peut pas attaquer jusqu'à la fin de son tour à moins de passer en mode Inertie une de ses cartes en mode Action à chaque fois."
+        }
+      ],
+      "a_verifier": [
+        "Nombre exact d'orbes vert et jaune du coût (image trop petite).",
+        "Successeur : je lis « (vert)(jaune)(1), piochez deux cartes ». Est-ce que piocher 2 cartes fait partie du coût, ou est-ce un bonus ?"
+      ]
+    },
+
+    {
+      "id": "BT24-134",
+      "type": "battle",
+      "name": "Freezer, Phase de Transformation finale",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 8, "specified": "?{ green: 2, yellow: 2 }" },
+      "power": 25000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": ["energy_exhaust", "deflect", "critical", "dual_attack", "successor"],
+      "abilities": [
+        {
+          "kind": "successor",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1, "yellow": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Freezer", "color": "green" }],
+          "text": "Successeur — (vert)(jaune), si votre Leader est un <Freezer> vert."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "remove_markers", "target": { "owner": "opponent", "zone": "unison", "up_to": 1 }, "count": 2 },
+            { "do": "negate_skills", "target": { "owner": "opponent", "zone": ["battle", "unison"], "up_to": 1 }, "duration": "turn" }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte est jouée, piochez une carte, choisissez jusqu'à une Unisson adverse, retirez deux marqueurs de celle-ci, choisissez jusqu'à une carte de Combat ou Unisson adverse et annulez ses Capacités pour tout le tour."
+        }
+      ],
+      "a_verifier": ["Nombre exact d'orbes du coût."]
+    },
+
+    {
+      "id": "BT24-136",
+      "type": "battle",
+      "name": "Freezer, Second Changement de Forme",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 6, "specified": "?{ green: 2, yellow: 2 }" },
+      "power": 20000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": ["energy_exhaust", "deflect", "double_strike", "successor"],
+      "abilities": [
+        {
+          "kind": "successor",
+          "cost": [{ "do": "pay_energy", "specified": { "yellow": 1 } }],
+          "text": "Successeur — (jaune)."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "condition": [{ "check": "energy_count", "min": 3 }],
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "power_mod", "target": "this", "amount": 10000, "duration": "turn" }
+          ],
+          "text": "Auto. / Limite 1 — Si vous avez trois Énergies ou plus : Quand cette carte est jouée, piochez une carte ; cette carte gagne +10000 de puissance pour tout le tour."
+        }
+      ],
+      "a_verifier": ["Nombre exact d'orbes du coût."]
+    },
+
+    {
+      "id": "BT27-076",
+      "type": "battle",
+      "name": "Freezer, Transformation effroyable",
+      "colors": ["yellow"],
+      "cost": { "total": 6, "specified": { "yellow": 3 } },
+      "power": 25000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "attacks", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "set_rest", "target": { "owner": "opponent", "zone": "battle", "up_to": 1 }, "save_as": "chosen" },
+            { "do": "if", "check": { "card": "chosen", "has_trait": "Saiyan" }, "then": [
+              { "do": "ko", "target": "chosen" },
+              { "do": "set_active", "target": "this" }
+            ] }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte attaque, choisissez jusqu'à une carte de Combat adverse et passez-la en mode Inertie. De plus, si la carte choisie est un «Saiyan», mettez-la KO et passez cette carte en mode Action."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "cost": [{ "do": "pay_energy", "generic": 1 }],
+          "condition": [
+            { "check": "any_of", "of": [
+              { "check": "leader_color", "value": "yellow" },
+              { "check": "leader_has_trait", "value": "Clan de Freezer" }
+            ] },
+            { "check": "energy_count", "min": 3 }
+          ],
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "play_self", "from": "hand" },
+            { "do": "move_under", "from": "drop", "up_to": 1, "filter": { "colors_any": ["yellow"], "trait": "Clan de Freezer" },
+              "under": { "zone": "battle", "owner": "self", "name": "Le Pire Clan Existant" } }
+          ],
+          "text": "Activation : Principale — (1), si votre Leader est jaune ou un «Clan de Freezer» et que vous avez trois Énergies ou plus : Piochez une carte, jouez cette carte depuis votre main et placez jusqu'à un «Clan de Freezer» jaune depuis votre Dispersion sous un {Le Pire Clan Existant} dans votre Zone de Combat."
+        }
+      ],
+      "a_verifier": ["Pas de {Le Pire Clan Existant} dans ton deck : la dernière partie de l'effet ne fera rien."]
+    },
+
+    {
+      "id": "BT27-080",
+      "type": "battle",
+      "name": "Zarbon, Accompagnateur",
+      "colors": ["yellow"],
+      "cost": { "total": 5, "specified": "?{ yellow: 3 }" },
+      "power": 15000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Zarbon"],
+      "traits": ["Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "negate_one_keyword", "target": { "owner": "opponent", "zone": "battle", "up_to": 1 }, "duration": "turn" },
+            { "do": "next_successor_discount", "filter": { "zone": "hand", "character": "Freezer" },
+              "reduce": { "specified": { "yellow": 1 }, "generic": 1 }, "duration": "turn" }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, choisissez jusqu'à une Capacité-clef d'une carte de Combat adverse et annulez-la pour tout le tour ; pendant ce tour, la prochaine fois que vous activez la Capacité Successeur d'un <Freezer> dans votre main, réduisez de (jaune)(1) son coût de Capacité."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "yellow": 1 } }],
+          "condition": [
+            { "check": "leader_character_and_color", "character": "Freezer", "color": "green" },
+            { "check": "opponent_energy_count", "min": 2 }
+          ],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale / Limite 1 — (jaune), si votre Leader est un <Freezer> vert et que votre adversaire a deux Énergies ou plus : Piochez une carte et jouez cette carte depuis votre main."
+        }
+      ],
+      "a_verifier": ["Nombre d'orbes jaunes du coût (3 supposés)."]
+    },
+
+    {
+      "id": "BT27-136",
+      "type": "battle",
+      "name": "Freezer, Empereur planétaire",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 9, "specified": "?{ green: 2, yellow: 2 }" },
+      "power": 30000,
+      "combo": { "cost": 1, "power": 5000 },
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": ["energy_exhaust", "successor"],
+      "abilities": [
+        {
+          "kind": "successor",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy_one_of", "options": [{ "green": 1 }, { "yellow": 1 }] }, { "do": "draw", "count": 1 }],
+          "condition": [{ "check": "energy_count", "min": 3 }],
+          "text": "Successeur / Limite 1 — (vert)/(jaune), si vous avez trois Énergies ou plus et que vous piochez une carte."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "energy_has_card", "filter": { "multicolor_exact": ["green", "yellow"] } }],
+          "effect": [{ "do": "modify_combo_cost", "target": "this", "zone": "hand", "amount": -1 }],
+          "text": "Permanent — S'il y a une carte multicolore vert-jaune parmi vos Énergies, réduisez de 1 le coût de Combo de cette carte dans votre main."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played_via", "who": "this", "via": "successor" },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "ignore_barrier": true } },
+            { "do": "remove_markers", "target": { "owner": "opponent", "zone": "unison", "up_to": 1 }, "count": 2 }
+          ],
+          "text": "Auto. — Quand cette carte est jouée via la Capacité Successeur, choisissez jusqu'à une carte de Combat adverse en ignorant la Capacité Barrière, mettez-la KO, choisissez jusqu'à une Unisson adverse et retirez deux marqueurs de celle-ci."
+        }
+      ],
+      "a_verifier": [
+        "Nombre exact d'orbes du coût.",
+        "Successeur : « piochez une carte » fait-il partie du coût (je l'ai codé ainsi) ?"
+      ]
+    },
+
+    {
+      "id": "BT3-104",
+      "type": "extra",
+      "name": "Kinto-un",
+      "colors": ["yellow"],
+      "cost": { "total": 1, "specified": { "yellow": 1 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "effect": [
+            { "do": "negate_attack" },
+            { "do": "optional", "cost": [{ "do": "discard", "count": 1, "filter": { "colors_any": ["yellow"] } }],
+              "then": [{ "do": "limit_opponent_attacks", "with": "battle_cards", "remaining": 1, "duration": "turn" }] }
+          ],
+          "text": "Contre : Attaque — Annulez l'attaque. Puis, vous pouvez placer une carte jaune de votre main dans votre Zone de Dispersion. Si vous faites ainsi, votre adversaire ne pourra attaquer avec ses cartes de Combat qu'une seule fois pour toute la durée du tour."
+        }
+      ],
+      "a_verifier": []
+    },
+
+    {
+      "id": "BT9-123",
+      "type": "battle",
+      "name": "Anilaza, le Colosse jaillissant",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 2, "specified": { "green": 1, "yellow": 1 } },
+      "power": 15000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Anilaza"],
+      "traits": ["Alien", "Univers 3"],
+      "era": "La Survie de l'Univers",
+      "keywords": ["energy_exhaust"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "energy_has_other_card", "filter": { "multicolor_exact": ["green", "yellow"] } }],
+          "effect": [{ "do": "negate_keyword", "keyword": "energy_exhaust", "target": "this", "zones": "all" }],
+          "text": "Permanent — S'il y a une carte multicolore vert-jaune parmi vos sources d'énergie autre que cette carte, annulez la Capacité Fuite d'énergie de cette carte dans toutes les zones."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "discard", "count": 1, "filter": { "multicolor_exact": ["green", "yellow"] } }],
+          "effect": [{ "do": "move_to_drop", "target": { "owner": "opponent", "zone": "combo", "count": 1 } }],
+          "text": "Activation : Combat / Une fois par tour — Choisissez une carte multicolore vert-jaune dans votre main et placez-la dans votre Zone de Dispersion : Choisissez une carte dans la Zone de Combo adverse et placez-la dans la Zone de Dispersion de son propriétaire."
+        }
+      ]
+    },
+
+    {
+      "id": "BT9-137",
+      "type": "battle",
+      "name": "Cell Xeno, Abomination innommable",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 12, "specified": { "green": 3, "yellow": 3 } },
+      "power": 40000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Cell : Xeno"],
+      "traits": ["Android"],
+      "era": "Special",
+      "keywords": ["ultimate", "deflect", "energy_exhaust", "successor"],
+      "abilities": [
+        { "kind": "successor", "cost": [], "text": "Successeur (sans coût supplémentaire)." },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "condition": [{ "check": "energy_count", "min": 5 }],
+          "effect": [
+            { "do": "discard_from_opponent_hand", "up_to": 3, "chooser": "self", "blind": true },
+            { "do": "grant_keywords", "target": "this", "keywords": ["quadruple_strike", "dual_attack"], "duration": "turn" }
+          ],
+          "text": "Auto. — Si vous avez cinq Énergies ou plus : Quand cette carte est jouée, choisissez jusqu'à trois cartes de la main de votre adversaire et défaussez-les ; cette carte acquiert Quadruple Frappe et Réplique pour tout le tour."
+        }
+      ],
+      "a_verifier": [
+        "Tes exemplaires sont en anglais : texte traduit par moi.",
+        "Personnage, Origine et Ère presque illisibles sur l'image (Cell : Xeno / Android / Special supposés)."
+      ]
+    },
+
+    {
+      "id": "EB1-037",
+      "type": "extra",
+      "name": "Clones meurtriers (Homicidal Clones)",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": { "green": 2 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "condition": [{ "check": "leader_mono_color", "value": "green" }],
+          "effect": [
+            { "do": "negate_attack" },
+            { "do": "create_token", "token": { "name": "Jeton Meda", "power": 5000, "combo": { "cost": 0, "power": 5000 } }, "count": 1,
+              "grant_keywords": ["blocker"], "grant_duration": "turn" }
+          ],
+          "text": "Contre : Attaque — Si votre Leader est exclusivement vert : Annulez l'attaque, puis jouez 1 jeton Meda (5000 de puissance, coût de Combo 0, puissance de Combo 5000). Ce jeton acquiert Bloqueur pour tout le tour."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "life_at_most", "value": 5 }],
+          "effect": [{ "do": "counter_alt_cost", "card": "this", "replace_energy_cost_with": [{ "do": "life_to_hand", "count": 1 }] }],
+          "text": "Permanent — Quand vos points de vie sont à 5 ou moins, vous pouvez activer la Capacité Contre de cette carte depuis votre main en rajoutant une carte de vos points de vie à votre main au lieu de payer son coût d'énergie."
+        }
+      ],
+      "a_verifier": ["Tes exemplaires sont en anglais : texte traduit par moi."]
+    },
+
+    {
+      "id": "P-055",
+      "type": "battle",
+      "name": "Towa, la tentation des ténèbres",
+      "colors": ["black"],
+      "cost": { "total": 3, "specified": "?{ black: 1 }" },
+      "power": 15000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Towa"],
+      "traits": ["Habitant du Royaume des Ténèbres"],
+      "era": "Le Royaume des Ténèbres",
+      "keywords": [{ "over_realm": 3 }],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played_via", "who": "this", "via": "over_realm" },
+          "condition": [{ "check": "leader_color_any", "values": ["green", "yellow"] }],
+          "effect": [
+            { "do": "power_mod", "target": { "owner": "self", "zone": "leader", "count": 1 }, "amount": 5000, "duration": "turn" },
+            { "do": "opponent_discards", "count": 1, "chooser": "opponent" }
+          ],
+          "text": "Auto. — Quand vous jouez cette carte avec Espace-temps, si votre Leader est vert ou jaune, choisissez un de vos Leaders ; il gagne +5000 de puissance pour toute la durée du tour ; puis votre adversaire choisit une carte de sa main et la place dans sa Zone de Dispersion."
+        }
+      ],
+      "a_verifier": ["Orbe du coût (1 noir supposé). En pratique, jouée via Espace-temps, son coût n'est pas payé."]
+    },
+
+    {
+      "id": "P-223",
+      "type": "battle",
+      "name": "Zarbon, Élite cosmique",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": { "green": 1 } },
+      "power": 5000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Zarbon"],
+      "traits": ["Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": ["blocker"],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "main",
+          "activates_from": "drop",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }, { "do": "discard", "count": 1, "filter": { "colors_any": ["green"] } }],
+          "effect": [{ "do": "play_self", "from": "drop" }],
+          "text": "Activation : Principale — (vert), choisissez une carte verte dans votre main et défaussez-la : Jouez cette carte depuis votre Zone de Dispersion."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "leaves_battle_area_by_skill_or_ko", "who": "this" },
+          "condition": [{ "check": "opponent_hand_count", "min": 5 }],
+          "effect": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }],
+          "text": "Auto. — Si votre adversaire a cinq cartes ou plus en main : Quand cette carte quitte une Zone de Combat via une Capacité ou est mise KO, votre adversaire choisit une carte de sa main et la défausse."
+        }
+      ]
+    },
+
+    {
+      "id": "P-561",
+      "type": "battle",
+      "name": "Piccolo Daimaô, Bataille aérienne",
+      "colors": ["green"],
+      "cost": { "total": 4, "specified": { "green": 1 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Piccolo Daimaô"],
+      "traits": ["Habitant de Namek"],
+      "era": "Piccolo Daimaô",
+      "keywords": ["unique", "critical"],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "pays_energy_cost_of_card": true,
+          "effect": [{ "do": "negate_attack" }, { "do": "play_self", "from": "hand" }],
+          "text": "Contre : Attaque — Annulez l'attaque et jouez cette carte."
+        },
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "leader_color", "value": "green" }, { "check": "leader_not_trait", "value": "Saiyan" }],
+          "effect": [{ "do": "modify_energy_cost", "target": "this", "zone": "hand",
+                       "amount": "-count", "count": { "zones": ["z_energy", "drop"], "filter": { "type": "battle", "colors_any": ["green"], "not_trait": "Saiyan" } } }],
+          "text": "Permanent — Si votre Leader est une carte verte autre que «Saiyan», réduisez de 1 le coût d'énergie de cette carte dans votre main pour chaque carte de Combat verte autre que «Saiyan» parmi vos Énergies Z et dans votre Dispersion."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "cost_at_most": 5 } } },
+            { "do": "remove_markers", "target": { "owner": "opponent", "zone": "unison", "up_to": 1 }, "count": 1 }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, choisissez jusqu'à une carte de Combat adverse avec un coût d'énergie de 5 ou moins, mettez-la KO, choisissez jusqu'à une Unisson adverse et retirez un marqueur de celle-ci."
+        }
+      ],
+      "a_verifier": ["La réduction ne touche que le coût total, l'orbe vert reste à payer (règle 1-2-3-1) : à confirmer."]
+    },
+
+    {
+      "id": "SD8-04",
+      "type": "battle",
+      "name": "Paragus, le Père protecteur",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": "?{ green: 1 }" },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 10000 },
+      "character": ["Paragus (Br)"],
+      "traits": ["Saiyan", "Armée de Freezer"],
+      "era": "DBS (Broly)",
+      "keywords": ["super_combo"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "used_in_combo", "who": "this" },
+          "condition": [{ "check": "leader_color", "value": "green" }, { "check": "life_at_most", "value": 4 }],
+          "effect": [
+            { "do": "draw", "count": 2 },
+            { "do": "move_from_hand", "count": 1, "to": "warp" }
+          ],
+          "text": "Auto. — Quand vous effectuez une Combo avec cette carte, si votre Leader est vert et que votre total de points de vie est de 4 ou moins, piochez deux cartes, choisissez une carte de votre main et transférez-la dans votre Dimension parallèle."
+        }
+      ],
+      "a_verifier": ["Couleur et orbe (vert supposé, le cadre de la carte est doré)."]
+    },
+
+    {
+      "id": "EX19-12",
+      "type": "battle",
+      "deck_zone": "side",
+      "name": "Broly, Présage d'Évolution",
+      "colors": ["green"],
+      "cost": { "total": 3, "specified": { "green": 1 } },
+      "power": 16000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Broly (Br)"],
+      "traits": ["Saiyan", "Armée de Freezer"],
+      "era": "DBS (Broly)",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "battle",
+          "activates_from": "combo",
+          "cost": [{ "do": "move_self", "from": "combo", "to": "drop" }],
+          "effect": [{ "do": "move_to_drop", "target": { "owner": "opponent", "zone": "combo", "up_to": 1, "filter": { "type": "battle", "combo_cost": 0 } } }],
+          "text": "Activation : Combat — Placez cette carte dans la Zone de Dispersion de son propriétaire depuis votre Zone de Combo : Choisissez jusqu'à une carte de Combat avec un coût de Combo de 0 dans la Zone de Combo adverse et placez-la dans la Zone de Dispersion de son propriétaire."
+        }
+      ]
+    },
+
+    {
+      "id": "BT24-057",
+      "type": "z_leader",
+      "deck_zone": "z_deck",
+      "name": "Freezer, Pleine Puissance à 100%",
+      "colors": ["green"],
+      "z_cost": 2,
+      "power": 30000,
+      "character": ["Freezer"],
+      "traits": ["Clan de Freezer", "Armée de Freezer"],
+      "era": "Freezer",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "z_awaken",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Freezer", "color": "green", "leader_face": "back" }],
+          "text": "Éveil Z — (vert) : <Freezer> vert."
+        },
+        { "same_as": "BT24-056", "face": "back", "ability_index": 0 },
+        {
+          "kind": "auto",
+          "trigger": { "event": "battle_end", "condition": "this_was_attacked" },
+          "effect": [
+            { "do": "optional", "cost": [{ "do": "z_energy_to_drop", "count": 2 }],
+              "else": [{ "do": "remove_from_game", "target": "this" }] }
+          ],
+          "text": "Auto. — À la fin du combat pendant lequel cette carte a été attaquée, vous pouvez placer deux de vos Énergies Z dans votre Dispersion. Si vous ne le faites pas, retirez cette carte de la partie."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "spirit_boost", "markers": 1 }],
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "set_active", "target": { "owner": "self", "zone": "battle", "up_to": 1, "filter": { "character": "Freezer", "colors_any": ["green"] } } }
+          ],
+          "text": "Activation : Principale / Une fois par tour / Boost d'Esprit 1 — Piochez une carte, choisissez jusqu'à une de vos cartes de Combat <Freezer> vertes et passez-la en mode Action."
+        }
+      ],
+      "a_verifier": ["Retiré de la partie, le Leader Z laisse le Leader d'origine (verso) en jeu (règle 15-1-5)."]
+    },
+
+    {
+      "id": "BT22-060",
+      "type": "z_extra",
+      "deck_zone": "z_deck",
+      "name": "Météore gigantesque de Destruction",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "z_cost": 1,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "battle",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "remove_from_game", "target": "this" }],
+          "effect": [
+            { "do": "power_mod", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1 }, "amount": 10000, "duration": "battle" },
+            { "do": "delayed", "when": { "event": "opponent_battle_card_ko_by_battle" }, "duration": "battle",
+              "then": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }] }
+          ],
+          "text": "Activation : Combat / Limite 1 — Retirez cette carte de la partie : Choisissez jusqu'à une de vos cartes ; la carte gagne +10000 de puissance pour tout le combat. Quand une carte de Combat adverse est mise KO via le combat, votre adversaire défausse une carte de sa main."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "remove_from_game", "target": "this" }],
+          "condition": [
+            { "check": "energy_count", "min": 4 },
+            { "check": "own_card_in_battle_attacking_battle_card", "filter": { "character": "Broly" } }
+          ],
+          "effect": [
+            { "do": "power_mod", "target": "own_card_in_battle", "amount": 30000, "duration": "turn" },
+            { "do": "delayed", "when": { "event": "opponent_battle_card_ko_by_battle" }, "duration": "battle",
+              "then": [{ "do": "optional_at_battle_end", "cost": [{ "do": "z_energy_to_drop", "count": 1 }],
+                         "then": [{ "do": "opponent_discards", "count": 2, "chooser": "opponent" }] }] }
+          ],
+          "text": "Activation : Combat / Limite 1 — Si vous avez quatre Énergies ou plus, qu'un de vos <Broly> est dans un combat durant lequel il attaque une carte de Combat et que vous retirez cette carte de la partie : Votre carte en combat gagne +30000 de puissance pour tout le tour. De plus, si une carte de Combat adverse est mise KO via le combat, vous pouvez placer une de vos Énergies Z dans votre Dispersion à la fin du combat. Si vous faites ainsi, votre adversaire défausse deux cartes de sa main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT24-059",
+      "type": "z_unison",
+      "deck_zone": "z_deck",
+      "name": "Cooler, Assistance fraternelle",
+      "colors": ["green"],
+      "cost": { "total": "X", "specified": { "green": 1 } },
+      "z_cost": 1,
+      "power": 5000,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "you_play_card", "filter": { "character": "Freezer", "colors_any": ["yellow"] } },
+          "limits": { "once_per_turn": true },
+          "effect": [{ "do": "power_mod", "target": "this", "amount": 10000, "duration": "turn" }],
+          "text": "Auto. / Une fois par tour — Quand vous jouez un <Freezer> jaune, cette carte gagne +10000 de puissance pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": 2,
+          "cost": [{ "do": "declare_number", "min": 0, "max": 3, "as": "X" }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Freezer", "color": "green" }],
+          "effect": [{ "do": "modify_energy_cost", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "not_token": true } },
+                       "amount": "+X", "duration": "turn" }],
+          "text": "[+2] Activation : Principale — Si votre Leader est un <Freezer> vert et que vous déclarez un nombre égal ou inférieur à 3 : Choisissez jusqu'à une carte de Combat adverse autre qu'un jeton et augmentez son coût d'énergie du nombre déclaré pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": -3,
+          "effect": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }],
+          "text": "[-3] Activation : Principale — Votre adversaire défausse une carte de sa main."
+        }
+      ],
+      "a_verifier": ["L'augmentation de coût adverse sert à les utiliser pour un Successeur via le verso du Leader."]
+    },
+
+    {
+      "id": "BT25-102",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Ryan Shenron, Séisme du Dragon",
+      "colors": ["yellow"],
+      "cost": { "total": 1, "specified": { "yellow": 1 } },
+      "z_cost": 2,
+      "power": 15000,
+      "character": ["Ryan Shenron"],
+      "traits": ["Dragon Maléfique"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["deflect"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played_or_attacks", "who": "this" },
+          "effect": [{ "do": "set_rest", "target": { "owner": "opponent", "zone": ["battle", "unison"], "up_to": 1 } }],
+          "text": "Auto. — Quand cette carte est jouée ou attaque, choisissez jusqu'à une carte de Combat ou Unisson adverse et passez-la en mode Inertie."
+        },
+        {
+          "kind": "auto",
+          "limits": { "limit": 1 },
+          "condition": [{ "check": "leader_character_and_color", "character": "Suu Shenron", "color": "yellow" }],
+          "trigger": { "event": "you_combo_with", "filter": { "trait": "Dragon Maléfique", "colors_any": ["yellow"] } },
+          "effect": [{ "do": "move_under", "from": "drop", "up_to": 1, "filter": { "trait": "Dragon Maléfique", "colors_any": ["yellow"] },
+                       "under": { "zone": "battle", "owner": "self", "name": "Les Sept Dragons Maléfiques rassemblés" } }],
+          "text": "Auto. / Limite 1 — Si votre Leader est un <Suu Shenron> jaune : Quand vous utilisez un de vos «Dragon Maléfique» jaunes pour une Combo, placez jusqu'à un «Dragon Maléfique» jaune depuis votre Dispersion sous un {Les Sept Dragons Maléfiques rassemblés} dans votre Zone de Combat."
+        }
+      ],
+      "a_verifier": ["La 2e capacité ne s'active jamais avec ton Leader : à coder plus tard."]
+    },
+
+    {
+      "id": "BT25-141",
+      "type": "z_unison",
+      "deck_zone": "z_deck",
+      "name": "Oolong, Désir immédiat",
+      "colors": ["?green"],
+      "cost": { "total": "X", "specified": "?{ green: 2 }" },
+      "z_cost": 1,
+      "power": 15000,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "effect": [
+            { "do": "cannot_attack", "target": "this" },
+            { "do": "grant_trait", "target": "this", "trait": "Shenron", "zones": "all" }
+          ],
+          "text": "Permanent — Cette carte ne peut pas attaquer et acquiert «Shenron» dans toutes les zones."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": 1,
+          "effect": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }],
+          "text": "[+1] Activation : Principale — Votre adversaire défausse une carte de sa main."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": -7,
+          "effect": [
+            { "do": "replacement", "duration": "opponent_next_turn",
+              "when": { "event": "opponent_draws_by_non_leader_skill" },
+              "instead": [{ "do": "move_to_deck_top", "target": { "owner": "opponent", "zone": "drop", "up_to": 1, "filter": { "type": "battle" } } }] },
+            { "do": "self_restriction", "rule": "cannot_activate_copies_of_this_card", "duration": "your_next_turn" }
+          ],
+          "text": "[-7] Activation : Principale — Pendant le tour suivant de votre adversaire, s'il pioche une carte via la Capacité d'une carte autre que Leader, placez jusqu'à une carte de Combat depuis sa Dispersion sur le dessus du deck de son propriétaire à la place. Vous ne pouvez pas activer les Capacités d'exemplaires de cette carte pendant votre tour suivant."
+        }
+      ],
+      "a_verifier": ["Couleur et orbes (image peu lisible).", "Formulation du [-7] relue avec doute : à vérifier sur la carte."]
+    },
+
+    {
+      "id": "BT28-081",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Son Gohan, Entraînement du Ki",
+      "colors": ["yellow"],
+      "cost": { "total": 4, "specified": { "yellow": 3 } },
+      "z_cost": 2,
+      "power": 20000,
+      "character": ["Son Gohan (jeune)"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "Le Sorcier maléfique Babidi",
+      "keywords": ["deflect", "double_strike"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "opponent_rest_card_count", "min": 5 }],
+          "effect": [{ "do": "modify_energy_cost", "target": "this", "zone": "z_deck", "amount": { "specified": { "yellow": -3 } } }],
+          "text": "Permanent — Si votre adversaire a cinq cartes ou plus en mode Inertie, réduisez de (jaune)(jaune)(jaune) le coût d'énergie de cette carte dans votre deck Z."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "set_rest", "target": { "owner": "opponent", "zone": ["battle", "unison"], "up_to": 1, "ignore_barrier": true }, "save_as": "chosen" },
+            { "do": "lock_active", "target": "chosen", "duration": "until_end_of_opponent_turn" }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte est jouée, choisissez jusqu'à une carte de Combat ou Unisson adverse en ignorant la Capacité Barrière et passez-la en mode Inertie ; la carte ne peut pas passer en mode Action jusqu'à la fin du tour adverse."
+        }
+      ]
+    },
+
+    {
+      "id": "BT29-107",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Pan, en Soutien",
+      "colors": ["?white"],
+      "cost": { "total": 2, "specified": {} },
+      "z_cost": 1,
+      "power": 15000,
+      "character": ["Pan"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "Baby",
+      "keywords": ["deflect"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [{ "do": "set_revealed", "target": { "owner": "any", "up_to": 1 } }],
+          "text": "Auto. — Quand cette carte est jouée, choisissez jusqu'à une carte d'un joueur et passez-la en mode Révélé."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "limits": { "once_per_turn": true },
+          "effect": [{ "do": "combo_from", "zone": "drop", "up_to": 1, "filter": { "type": "battle" }, "negate_skills": "turn" }],
+          "text": "Activation : Combat / Une fois par tour — Utilisez jusqu'à une carte de Combat depuis votre Dispersion pour une Combo avec ses Capacités annulées pour tout le tour."
+        }
+      ],
+      "a_verifier": ["Couleur (blanche ?) et éventuels orbes du coût."]
+    },
+
+    {
+      "id": "P-405",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Oolong, Cupidité avouée",
+      "colors": ["yellow"],
+      "cost": { "total": 1, "specified": { "yellow": 1 } },
+      "z_cost": 2,
+      "power": 4000,
+      "character": ["Oolong"],
+      "traits": ["Terrien"],
+      "era": "Son Goku enfant",
+      "keywords": ["unique"],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "once_per_turn": true },
+          "effect": [
+            { "do": "choose", "target": { "owner": "any", "zone": "battle", "up_to": 1, "ignore_barrier": true }, "save_as": "chosen" },
+            { "do": "set_power", "target": "this", "value": { "power_of": "chosen" }, "until": "start_of_opponent_turn" },
+            { "do": "set_power", "target": "this", "value": 4000, "from": "start_of_opponent_turn" }
+          ],
+          "text": "Activation : Principale / Une fois par tour — Choisissez jusqu'à une carte de Combat en jeu en ignorant la Capacité Barrière. La puissance de cette carte devient la puissance de la carte choisie via cette Capacité ; au début du tour adverse, la puissance de cette carte devient 4000."
+        }
+      ]
+    }
+  ]
+}

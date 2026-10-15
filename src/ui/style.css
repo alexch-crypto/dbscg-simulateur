@@ -1,0 +1,63 @@
+/* Style volontairement simple : l'interface sert à tester le moteur. */
+:root {
+  --bg: #f4f4f6;
+  --panel: #ffffff;
+  --border: #c9c9d2;
+  --text: #1d1d24;
+  --muted: #6b6b78;
+  --accent: #2f5bd3;
+  --rest: #ecebe4;
+  --error: #b42318;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; font-size: 14px; background: var(--bg); color: var(--text); }
+header { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: center; padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+main { display: grid; grid-template-columns: 1fr 380px; gap: 12px; padding: 12px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+h2 { margin: 0 0 8px; font-size: 16px; }
+h3 { margin: 8px 0 4px; font-size: 13px; color: var(--muted); text-transform: uppercase; }
+.player { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+.player.me { border-color: var(--accent); }
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.zone { margin: 6px 0; }
+.zone-title { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.counters { display: flex; flex-direction: column; gap: 2px; justify-content: center; }
+.cards { display: flex; flex-wrap: wrap; gap: 6px; }
+.card { width: 150px; min-height: 92px; border: 1px solid var(--border); border-radius: 6px; padding: 6px; background: #fff; font-size: 12px; }
+.card.leader { width: 190px; border-width: 2px; }
+.card.rest { background: var(--rest); transform: rotate(4deg); border-style: dashed; }
+.card.selectable { cursor: pointer; }
+.card.selectable:hover { border-color: var(--accent); }
+.card.selected { outline: 3px solid var(--accent); }
+.hidden-card { width: 40px; min-height: 56px; display: flex; align-items: center; justify-content: center; background: #3b3b4a; color: #fff; font-weight: bold; }
+.card-name { font-weight: 600; margin-bottom: 3px; }
+.card-line { color: var(--muted); }
+.card-line b { color: var(--text); }
+.card-mode { margin-top: 4px; font-size: 11px; font-weight: 600; }
+.kw { color: var(--accent); }
+.empty { color: var(--muted); font-style: italic; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid #0003; vertical-align: middle; }
+.dot-red { background: #d33; } .dot-blue { background: #36c; } .dot-green { background: #2a2; }
+.dot-yellow { background: #ec2; } .dot-black { background: #222; } .dot-white { background: #fff; }
+.drop { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.battle { background: #fff4e5; border: 1px solid #f0b46b; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
+.result { background: #e8f5e9; border: 1px solid #66bb6a; padding: 10px 16px; font-size: 16px; }
+aside { display: flex; flex-direction: column; gap: 12px; }
+.actions, .log { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.actions button { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 6px 8px; }
+.group { margin-bottom: 6px; }
+.prompt { font-weight: 600; }
+.hint { font-size: 12px; color: var(--muted); }
+.hint input { width: 50px; }
+.error { color: var(--error); font-weight: 600; }
+button { font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+button:hover { border-color: var(--accent); }
+button.danger { color: var(--error); }
+.header-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.header-buttons button, .file-button { padding: 4px 8px; }
+.file-button { font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.file-button:hover { border-color: var(--accent); }
+.log { max-height: 420px; overflow-y: auto; font-size: 12px; }
+.log div { padding: 2px 0; border-bottom: 1px solid #eee; }
+.pass-screen { max-width: 520px; margin: 15vh auto; text-align: center; background: var(--panel); padding: 32px; border-radius: 12px; border: 1px solid var(--border); }
+.pass-screen button { font-size: 16px; padding: 10px 20px; }
