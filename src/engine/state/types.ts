@@ -89,8 +89,23 @@ export type PendingDecision =
   | { type: "TAKE_DAMAGE"; player: PlayerId; amount: number; critical: boolean }
   /** 8-5-2 / 8-5-3 : placer jusqu'à une carte de sa Zone de Combo dans sa Zone d'Énergie Z. */
   | { type: "COMBO_TO_Z"; player: PlayerId }
-  /** 5-2 : choisir des cartes (visibles) pendant la résolution d'un effet. */
-  | { type: "CHOOSE_CARDS"; player: PlayerId; min: number; max: number; options: string[]; prompt: string }
+  /**
+   * 5-2 : choisir des cartes pendant la résolution d'un effet. `looked` : cartes d'une zone
+   * secrète que le joueur regarde (ex. le dessus de son deck, 20-12) — visibles par lui seul.
+   */
+  | {
+      type: "CHOOSE_CARDS";
+      player: PlayerId;
+      min: number;
+      max: number;
+      options: string[];
+      prompt: string;
+      looked?: { uid: string; cardId: string }[];
+    }
+  /** Choisir des positions dans la main adverse, à l'aveugle. */
+  | { type: "CHOOSE_BLIND"; player: PlayerId; owner: PlayerId; min: number; max: number; prompt: string }
+  /** Choisir une option (« Vous pouvez... » oui/non, quel mot-clé annuler...). */
+  | { type: "CHOOSE_OPTION"; player: PlayerId; options: { id: string; label: string }[]; prompt: string }
   /**
    * 3-9-2 : choisir des cartes de sa Zone de Vie pendant un effet (« rajoutez à votre main une
    * carte de vos points de vie »). On choisit des POSITIONS, à l'aveugle.
@@ -129,7 +144,25 @@ export interface EffectResolution {
   index: number;
   /** Ce qu'il faut faire une fois l'effet résolu. */
   then: Continuation;
+  /** Cartes choisies et mémorisées par une instruction (`save_as`), ex. « la carte choisie ». */
+  saved: Record<string, string[]>;
+  /** Cartes en attente d'un second choix dans l'instruction en cours (ex. quel mot-clé annuler). */
+  memo: string[];
 }
+
+/**
+ * Effet continu sur une carte en jeu, jusqu'à la fin du tour `untilTurn` (inclus), ou jusqu'à
+ * la fin du combat si `battleOnly`. Il disparaît si la carte quitte la zone (9-9-2).
+ */
+export type ContinuousEffect = { uid: string; untilTurn: number; battleOnly?: boolean } & (
+  | /**
+     * « ne peut pas passer en mode Action ». `chargeOnly` : seulement pendant la phase de
+     * Recharge (7-2-7), sinon aussi via des effets ([Réplique], « passez en mode Action »).
+     */ { kind: "lock_active"; chargeOnly: boolean }
+  | /** « annulez ses Capacités » (9-1). */ { kind: "negate_all" }
+  | /** « annulez sa Capacité-clef X ». */ { kind: "negate_keyword"; keyword: string }
+  | /** « acquiert [X] ». */ { kind: "grant_keyword"; keyword: string }
+);
 
 /** Capacité [Auto.] d'une carte, en état de suspens (9-6-2). */
 export interface QueuedAuto {
@@ -216,5 +249,7 @@ export interface GameState {
   nextAutoId: number;
   /** Modifications de puissance temporaires en cours. */
   powerMods: PowerModifier[];
+  /** Autres effets continus en cours (verrouillage, annulation, mots-clés donnés). */
+  effects: ContinuousEffect[];
   result: GameResult | null;
 }

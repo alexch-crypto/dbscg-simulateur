@@ -10,7 +10,7 @@ import { opponentOf, type CardInstance, type CardRef, type GameState, type Playe
 import { checkDefeat } from "./defeat";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
 import { checkpoint, queueTriggers } from "./autos";
-import { cardHasKeyword, hasKeyword, KW, readyAfterBattleCount, removeIfUltimate, strikeDamage } from "./keywords";
+import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
 import { payEnergy } from "./play";
 import { forgetCard, koBattleCard } from "./zones";
 
@@ -83,7 +83,12 @@ export function possibleBlockers(s: GameState, ctx: GameContext): string[] {
   const battle = s.battle;
   if (!battle) return [];
   return s.players[battle.target.player].battle
-    .filter((c) => c.mode === "active" && c.uid !== battle.target.uid && cardHasKeyword(ctx.cards.get(c.cardId), KW.blocker))
+    .filter(
+      (c) =>
+        c.mode === "active" &&
+        c.uid !== battle.target.uid &&
+        hasKeyword(s, { player: battle.target.player, uid: c.uid }, KW.blocker, ctx.cards),
+    )
     .map((c) => c.uid);
 }
 
@@ -449,13 +454,14 @@ function finishBattle(s: GameState, events: GameEvent[]): void {
     const target = p.leader.uid === auto.card.uid ? p.leader : p.battle.find((c) => c.uid === auto.card.uid);
     if (!target) continue; // la carte a quitté le jeu : rien à relever
     s.turnUsage[auto.usageKey] = (s.turnUsage[auto.usageKey] ?? 0) + 1;
-    if (target.mode === "rest") {
+    if (target.mode === "rest" && !readyBlockedByEffect(s, auto.card.uid)) {
       target.mode = "active";
       events.push({ type: "CARD_READIED", player: auto.card.player, uid: auto.card.uid, reason: "dual_attack" });
     }
   }
   // 8-5-11 / 8-5-12 : fin des effets « pour tout le combat ».
   s.powerMods = s.powerMods.filter((m) => m.until !== "battle");
+  s.effects = s.effects.filter((e) => !e.battleOnly);
   // 8-5-13 : le combat s'achève, retour à 7-3-3.
   events.push({ type: "BATTLE_ENDED" });
   backToMain(s);

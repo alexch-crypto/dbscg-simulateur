@@ -40,7 +40,17 @@ export type Action =
   /** Choisir des positions de sa Zone de Vie pendant un effet (0 = première). */
   | { type: "CHOOSE_LIFE"; player: PlayerId; indices: number[] }
   /** 9-6-3 : choisir quelle [Auto.] en attente résoudre maintenant. */
-  | { type: "CHOOSE_AUTO"; player: PlayerId; id: number };
+  | { type: "CHOOSE_AUTO"; player: PlayerId; id: number }
+  /** Choisir des positions dans la main adverse, à l'aveugle. */
+  | { type: "CHOOSE_BLIND"; player: PlayerId; indices: number[] }
+  /** Choisir une option (oui/non, mot-clé...). */
+  | { type: "CHOOSE_OPTION"; player: PlayerId; id: string }
+  /**
+   * 9-4 : activer une Capacité [Activation] d'une carte (Leader, Zone de Combat, main ou
+   * Dispersion). `index` = position de la Capacité sur la carte ; `payment` = Énergies payées
+   * pour le coût d'énergie de la Capacité (s'il y en a un).
+   */
+  | { type: "ACTIVATE"; player: PlayerId; uid: string; index: number; payment: PaymentChoice };
 
 /** Ce que le joueur passe en mode Inertie pour payer : ses Énergies (uids) et des marqueurs Énergie. */
 export interface PaymentChoice {
@@ -100,6 +110,22 @@ export type GameEvent =
   | { type: "BATTLE_ENDED" }
   | { type: "AWAKEN_ACTIVATED"; player: PlayerId }
   | { type: "LEADER_FLIPPED"; player: PlayerId; side: "front" | "back" }
+  /** Carte jouée via une Capacité (5-5-3), sans payer son coût. */
+  | { type: "CARD_PLAYED_BY_SKILL"; player: PlayerId; uid: string; cardId: string; from: "hand" | "drop"; mode: "active" | "rest" }
+  /** Capacité [Activation] activée (9-4) : la carte est révélée si elle était en main. */
+  | { type: "ABILITY_ACTIVATED"; player: PlayerId; uid: string; cardId: string; index: number; text: string }
+  | { type: "CARDS_LOCKED"; uids: string[] }
+  | { type: "SKILLS_NEGATED"; uids: string[] }
+  | { type: "KEYWORD_NEGATED"; uid: string; keyword: string }
+  | { type: "KEYWORDS_GRANTED"; uids: string[]; keywords: string[] }
+  /** Cartes défaussées (main → Dispersion, zone publique : révélées). */
+  | { type: "CARDS_DISCARDED"; player: PlayerId; cardIds: string[] }
+  | { type: "CARDS_TO_WARP"; player: PlayerId; cardIds: string[] }
+  | { type: "CARD_TO_DROP"; player: PlayerId; uid: string; cardId: string; from: string }
+  /** Le joueur regarde des cartes du dessus de son deck (l'adversaire voit seulement le nombre). */
+  | { type: "DECK_LOOKED"; player: PlayerId; count: number }
+  /** Cartes ajoutées à la main depuis le deck (révélées seulement si l'effet le demande). */
+  | { type: "CARDS_TO_HAND"; player: PlayerId; from: "deck"; cardIds: (string | null)[] }
   /** Une [Auto.] se met en suspens (9-6-2). */
   | { type: "AUTO_TRIGGERED"; player: PlayerId; uid: string; cardId: string }
   /** Une [Auto.] en attente ne se résout pas (limite atteinte, condition non remplie...). */

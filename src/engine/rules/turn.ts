@@ -18,6 +18,7 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   // « pour tout le tour » du tour précédent sont terminés (7-4-6).
   s.turnUsage = {};
   s.powerMods = s.powerMods.filter((m) => m.until !== "turn");
+  s.effects = s.effects.filter((e) => e.untilTurn >= turnNumber);
   events.push({ type: "TURN_STARTED", player, turnNumber });
 
   // 7-2-2 à 7-2-5 : effets « pour tout le tour », fin des effets « jusqu'au début du tour
@@ -26,9 +27,11 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
 
   // 7-2-7 : le joueur actif passe en mode Action ses cartes en mode Inertie de sa Zone du
   // Leader, de Combat, d'Énergie (et Unisson, non gérée pour l'instant).
+  // Sauf les cartes qui « ne peuvent pas passer en mode Action » à cause d'un effet.
   const p = s.players[player];
-  p.leader.mode = "active";
-  for (const c of [...p.battle, ...p.energy]) c.mode = "active";
+  const locked = new Set(s.effects.filter((e) => e.kind === "lock_active").map((e) => e.uid));
+  if (!locked.has(p.leader.uid)) p.leader.mode = "active";
+  for (const c of [...p.battle, ...p.energy]) if (!locked.has(c.uid)) c.mode = "active";
   events.push({ type: "CARDS_READIED", player });
 
   // 7-2-8 : point de contrôle.

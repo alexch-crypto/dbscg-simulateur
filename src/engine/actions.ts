@@ -6,7 +6,8 @@ import type { Action, GameContext, GameEvent } from "./protocol";
 import { activateAwaken } from "./rules/awaken";
 import { combo, comboToZEnergy, declareAttack, declareBlocker, endStep, takeLife } from "./rules/battle";
 import { chooseAuto } from "./rules/autos";
-import { answerChoice, answerLife } from "./rules/effects";
+import { activateAbility } from "./rules/activate";
+import { answerChoice, answerOption, answerPositions } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
 import { playBattleCard } from "./rules/play";
 import { chooseFirstPlayer, mulligan } from "./rules/setup";
@@ -24,15 +25,17 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   CHARGE: ["CHARGE_ENERGY"],
   // 1-5-4-1 : [Activation : Principale/Combat] (dont [Éveil]) pendant la phase principale et
   // l'étape d'Attaque du joueur actif, et pendant l'étape de Défense du joueur non actif.
-  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "END_MAIN_PHASE"],
+  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "END_MAIN_PHASE"],
   BLOCKER: ["DECLARE_BLOCKER"],
-  OFFENSE: ["COMBO", "AWAKEN", "END_STEP"],
-  DEFENSE: ["COMBO", "AWAKEN", "END_STEP"],
+  OFFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
+  DEFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
   TAKE_DAMAGE: ["TAKE_LIFE"],
   COMBO_TO_Z: ["COMBO_TO_Z_ENERGY"],
   CHOOSE_CARDS: ["CHOOSE_CARDS"],
   CHOOSE_LIFE: ["CHOOSE_LIFE"],
   CHOOSE_AUTO: ["CHOOSE_AUTO"],
+  CHOOSE_BLIND: ["CHOOSE_BLIND"],
+  CHOOSE_OPTION: ["CHOOSE_OPTION"],
 };
 
 /** Vérifie que l'action répond bien à la décision attendue. Renvoie un message d'erreur sinon. */
@@ -110,7 +113,14 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       error = answerChoice(next, action, ctx, events);
       break;
     case "CHOOSE_LIFE":
-      error = answerLife(next, action, ctx, events);
+    case "CHOOSE_BLIND":
+      error = answerPositions(next, action, ctx, events);
+      break;
+    case "CHOOSE_OPTION":
+      error = answerOption(next, action, ctx, events);
+      break;
+    case "ACTIVATE":
+      error = activateAbility(next, action, ctx, events);
       break;
     case "CHOOSE_AUTO":
       error = chooseAuto(next, action, ctx, events);

@@ -5,7 +5,7 @@
 
 import type { CardDefinition } from "../cards/types";
 import type { Action, GameContext, GameEvent, PaymentChoice } from "../protocol";
-import type { GameState, PlayerId } from "../state/types";
+import type { CardInstance, GameState, PlayerId } from "../state/types";
 import {
   applyCostModifiers,
   checkPayment,
@@ -75,6 +75,34 @@ export function payEnergy(
   for (const uid of choice.energy) p.energy.find((c) => c.uid === uid)!.mode = "rest";
   // 1-14-2 : un marqueur Énergie utilisé est retiré du jeu.
   p.energyMarkers -= choice.markers;
+  return null;
+}
+
+/**
+ * 5-5-3 : jouer une carte de Combat via une Capacité (sans payer son coût d'Énergie), depuis
+ * la main ou la Dispersion. Déclenche « Quand cette carte est jouée » (9-6-9-4) ; le point de
+ * contrôle a lieu à la fin de la résolution en cours. Renvoie un message si c'est impossible.
+ */
+export function enterBattleArea(
+  s: GameState,
+  ctx: GameContext,
+  player: PlayerId,
+  card: CardInstance,
+  from: "hand" | "drop",
+  mode: "active" | "rest",
+  events: GameEvent[],
+): string | null {
+  const def = ctx.cards.get(card.cardId);
+  if (def?.type !== "battle") return "seules les cartes de Combat peuvent être jouées ainsi pour l'instant";
+  const uniqueError = uniqueBlocks(s, card, ctx.cards);
+  if (uniqueError) return uniqueError;
+  const zone = s.players[player][from];
+  zone.splice(zone.indexOf(card), 1);
+  card.mode = mode;
+  card.faceUp = true;
+  s.players[player].battle.push(card);
+  events.push({ type: "CARD_PLAYED_BY_SKILL", player, uid: card.uid, cardId: card.cardId, from, mode });
+  queueTriggers(s, { event: "played", card }, ctx, events);
   return null;
 }
 

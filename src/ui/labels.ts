@@ -95,13 +95,37 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       return a.uid === null ? "Ne rien placer en Énergie Z" : `Placer en Énergie Z : ${nameOf(view, db, a.uid)}`;
     case "AWAKEN":
       return "Éveil du Leader";
-    case "CHOOSE_CARDS":
-      return a.uids.length === 0 ? "Ne rien choisir" : `Choisir : ${a.uids.map((u) => nameOf(view, db, u)).join(", ")}`;
+    case "CHOOSE_CARDS": {
+      // Cartes regardées dans une zone secrète (dessus du deck) : leur nom vient de `looked`.
+      const looked = view.pending?.type === "CHOOSE_CARDS" ? view.pending.looked : undefined;
+      const label = (u: string) => {
+        const seen = looked?.find((c) => c.uid === u);
+        return seen ? cardName(db, seen.cardId) : nameOf(view, db, u);
+      };
+      return a.uids.length === 0 ? "Ne rien choisir" : `Choisir : ${a.uids.map(label).join(", ")}`;
+    }
     case "CHOOSE_LIFE":
       return a.indices.length === 0 ? "Ne prendre aucune carte de Vie" : `Prendre la carte de Vie ${a.indices.map((i) => `n°${i + 1}`).join(" + ")}`;
     case "CHOOSE_AUTO": {
       const option = view.pending?.type === "CHOOSE_AUTO" ? view.pending.options.find((o) => o.id === a.id) : undefined;
       return `Résoudre d'abord : ${option?.label ?? `capacité n°${a.id}`}`;
+    }
+    case "CHOOSE_BLIND":
+      return a.indices.length === 0 ? "Ne rien choisir" : `Choisir ${a.indices.length} carte(s) au hasard dans la main adverse`;
+    case "CHOOSE_OPTION": {
+      const option = view.pending?.type === "CHOOSE_OPTION" ? view.pending.options.find((o) => o.id === a.id) : undefined;
+      return option?.label ?? a.id;
+    }
+    case "ACTIVATE": {
+      const card = findVisible(view, a.uid);
+      const leader = Object.values(view.players).find((p) => p.leader.uid === a.uid)?.leader;
+      const cardId = card?.cardId ?? leader?.cardId ?? "";
+      const def = db.get(cardId);
+      const abilities = def?.type === "leader" ? (leader?.side === "back" ? def.back : def.front)?.abilities : def?.abilities;
+      const text = String(abilities?.[a.index]?.["text"] ?? "");
+      return `Activer ${nameOf(view, db, a.uid)} : ${text.slice(0, 90)}${text.length > 90 ? "…" : ""}${
+        a.payment.energy.length || a.payment.markers ? paymentText(view, db, a.payment.energy, a.payment.markers) : ""
+      }`;
     }
   }
 }
@@ -131,6 +155,8 @@ export function describePending(p: PendingDecision | null): string {
       return "Fin du combat : placez une de vos cartes de Combo en Énergie Z (facultatif).";
     case "CHOOSE_CARDS":
     case "CHOOSE_LIFE":
+    case "CHOOSE_BLIND":
+    case "CHOOSE_OPTION":
       return p.prompt;
     case "CHOOSE_AUTO":
       return "Plusieurs de vos capacités [Auto.] se déclenchent : choisissez laquelle résoudre en premier.";
@@ -216,6 +242,28 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `Le Leader de ${e.player} se retourne (${e.side === "back" ? "face arrière" : "face avant"}).`;
     case "CARDS_MODE_CHANGED":
       return `${e.uids.map(n).join(", ")} ${e.uids.length > 1 ? "passent" : "passe"} en mode ${e.mode === "rest" ? "Inertie" : "Action"}.`;
+    case "CARD_PLAYED_BY_SKILL":
+      return `${e.player} joue ${cardName(db, e.cardId)} via une Capacité (depuis ${e.from === "hand" ? "sa main" : "sa Dispersion"})${e.mode === "rest" ? " en mode Inertie" : ""}.`;
+    case "ABILITY_ACTIVATED":
+      return `${e.player} active une Capacité de ${cardName(db, e.cardId)}.`;
+    case "CARDS_LOCKED":
+      return `${e.uids.map(n).join(", ")} ne pourra pas passer en mode Action.`;
+    case "SKILLS_NEGATED":
+      return `Les Capacités de ${e.uids.map(n).join(", ")} sont annulées.`;
+    case "KEYWORD_NEGATED":
+      return `La Capacité-clef ${e.keyword} de ${n(e.uid)} est annulée.`;
+    case "KEYWORDS_GRANTED":
+      return `${e.uids.map(n).join(", ")} acquiert ${e.keywords.join(", ")}.`;
+    case "CARDS_DISCARDED":
+      return `${e.player} défausse ${e.cardIds.map((id) => cardName(db, id)).join(", ")}.`;
+    case "CARDS_TO_WARP":
+      return `${e.player} transfère ${e.cardIds.map((id) => cardName(db, id)).join(", ")} dans sa Dimension parallèle.`;
+    case "CARD_TO_DROP":
+      return `${cardName(db, e.cardId)} (${e.player}) est placée dans la Dispersion.`;
+    case "DECK_LOOKED":
+      return `${e.player} regarde les ${e.count} cartes du dessus de son deck.`;
+    case "CARDS_TO_HAND":
+      return `${e.player} rajoute à sa main ${e.cardIds.map((id) => (id ? cardName(db, id) : "une carte")).join(", ")}.`;
     case "AUTO_TRIGGERED":
       return `[Auto.] de ${cardName(db, e.cardId)} (${e.player}) se déclenche.`;
     case "AUTO_CANCELLED":

@@ -14,6 +14,7 @@ import {
   possibleTargets,
   suggestComboPayment,
 } from "./rules/battle";
+import { activatableAbilities, suggestActivationPayment } from "./rules/activate";
 import { awakenBlocker } from "./rules/awaken";
 import { availableEnergySources, findPayment } from "./rules/energy";
 import { uniqueBlocks } from "./rules/keywords";
@@ -38,6 +39,11 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
   if (s.result) return [];
   const actions: Action[] = [];
   const pending = s.pending;
+
+  // 9-4 : Capacités [Activation] activables maintenant (phase principale, étapes d'Attaque/Défense).
+  for (const a of activatableAbilities(s, player, ctx)) {
+    actions.push({ type: "ACTIVATE", player, uid: a.uid, index: a.index, payment: suggestActivationPayment(s, player, a, ctx) });
+  }
 
   if (pending && pending.player === player) {
     switch (pending.type) {
@@ -100,6 +106,17 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
       case "CHOOSE_AUTO":
         for (const option of pending.options) actions.push({ type: "CHOOSE_AUTO", player, id: option.id });
         break;
+      case "CHOOSE_OPTION":
+        for (const option of pending.options) actions.push({ type: "CHOOSE_OPTION", player, id: option.id });
+        break;
+      case "CHOOSE_BLIND": {
+        const n = s.players[pending.owner].hand.length;
+        // Les positions n'apportent aucune information : on propose « les k premières ».
+        for (let k = pending.min; k <= pending.max; k++) {
+          actions.push({ type: "CHOOSE_BLIND", player, indices: [...Array(k).keys()].filter((i) => i < n) });
+        }
+        break;
+      }
       case "CHOOSE_CARDS": {
         // Choix possibles : aucune carte (si permis), chaque carte seule, et les `max` premières.
         // (Toutes les combinaisons seraient trop nombreuses ; tout choix valide reste accepté.)

@@ -70,13 +70,15 @@ describe("[Auto.] « Quand cette carte est jouée »", () => {
     expect(r.state.pending).toEqual({ type: "MAIN", player: "P2" });
   });
 
-  it("partie non gérée : Autorité oppressive fait ce qu'elle peut et signale le reste", () => {
+  it("partie non gérée : la [Limite X] / coût Successeur d'une carte est signalé, le reste se résout", () => {
+    // Overdrive : « votre adversaire ne peut pas attaquer à moins de... » (restriction d'attaque, à venir).
     const s = p2Main();
-    energies(s, "P2", 3);
-    const freezer = give(s, "P2", "BT24-106", "hand");
-    const r = play(playCard(s, freezer.uid).state, { type: "CHOOSE_LIFE", player: "P2", indices: [0] });
-    expect(r.state.players.P2.life).toHaveLength(7);
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT24-106" }));
+    for (const id of ["BT9-123", "BT9-123", "BT9-123", "BT9-123", "BT24-105", "BT24-106", "P-561", "BT27-080", "BT24-134", "BT24-136"]) {
+      give(s, "P2", id, "energy");
+    }
+    const overdrive = give(s, "P2", "BT24-133", "hand");
+    const r = playCard(s, overdrive.uid);
+    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT24-133" }));
     expect(r.state.pending).toEqual({ type: "MAIN", player: "P2" });
   });
 
@@ -146,7 +148,7 @@ describe("[Auto.] pendant l'attaque : contre, puis autos, puis blocage", () => {
     expect(r.state.pending).toEqual({ type: "BLOCKER", player: "P1" });
   });
 
-  it("Transformation effroyable : passe une carte adverse en mode Inertie quand elle attaque (la suite « si Saiyan » est signalée)", () => {
+  it("Transformation effroyable : passe une carte adverse en mode Inertie ; pas « Saiyan » => rien de plus", () => {
     const s = p2Main();
     const freezer = give(s, "P2", "BT27-076", "battle");
     const target = give(s, "P1", "BT24-105", "battle", "active");
@@ -154,8 +156,18 @@ describe("[Auto.] pendant l'attaque : contre, puis autos, puis blocage", () => {
     expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", options: [target.uid] });
     r = play(r.state, { type: "CHOOSE_CARDS", player: "P2", uids: [target.uid] });
     expect(r.state.players.P1.battle[0]!.mode).toBe("rest");
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT27-076" }));
+    expect(r.state.players.P2.battle[0]!.mode).toBe("rest"); // l'attaquante ne se relève pas
     expect(r.state.pending).toEqual({ type: "OFFENSE", player: "P2" });
+  });
+
+  it("Transformation effroyable contre un « Saiyan » : il est mis KO et l'attaquante repasse en mode Action", () => {
+    const s = p2Main();
+    const freezer = give(s, "P2", "BT27-076", "battle");
+    const paragus = give(s, "P1", "SD8-04", "battle", "active"); // « Saiyan »
+    let r = play(s, { type: "ATTACK", player: "P2", attacker: freezer.uid, target: "P1-L" });
+    r = play(r.state, { type: "CHOOSE_CARDS", player: "P2", uids: [paragus.uid] });
+    expect(r.state.players.P1.drop.map((c) => c.uid)).toContain(paragus.uid);
+    expect(r.state.players.P2.battle[0]!.mode).toBe("active");
   });
 });
 
@@ -167,9 +179,12 @@ describe("[Auto.] « Quand cette carte quitte la Zone de Combat / est mise KO »
     const r = play(s, { type: "ATTACK", player: "P2", attacker: "P2-L", target: zarbon.uid }, { type: "END_STEP", player: "P2" }, { type: "END_STEP", player: "P1" });
     expect(r.state.players.P1.drop.map((c) => c.uid)).toContain(zarbon.uid);
     expect(r.events).toContainEqual({ type: "AUTO_TRIGGERED", player: "P1", uid: zarbon.uid, cardId: "P-223" });
-    // « votre adversaire défausse » arrive au bloc C : signalé pour l'instant.
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "P-223" }));
-    expect(r.state.battle).toBeNull();
+    // « votre adversaire choisit une carte de sa main et la défausse » : c'est P2 qui choisit.
+    expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P2", min: 1, max: 1 });
+    const chosen = (r.state.pending as { options: string[] }).options[0]!;
+    const after = play(r.state, { type: "CHOOSE_CARDS", player: "P2", uids: [chosen] });
+    expect(after.state.players.P2.drop.map((c) => c.uid)).toContain(chosen);
+    expect(after.state.battle).toBeNull();
   });
 
   it("si l'adversaire a moins de 5 cartes, la condition n'est pas remplie", () => {
@@ -190,6 +205,11 @@ describe("[Auto.] « Quand vous faites une Combo avec cette carte »", () => {
     const handBefore = r.state.players.P2.hand.length;
     r = play(r.state, { type: "COMBO", player: "P2", uid: paragus.uid, payment: { energy: [], markers: 0 } });
     expect(r.state.players.P2.hand).toHaveLength(handBefore - 1 + 2);
+    // Puis : « choisissez une carte de votre main et transférez-la dans votre Dimension parallèle ».
+    expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P2", min: 1, max: 1 });
+    const chosen = r.state.players.P2.hand[0]!;
+    r = play(r.state, { type: "CHOOSE_CARDS", player: "P2", uids: [chosen.uid] });
+    expect(r.state.players.P2.warp.map((c) => c.uid)).toEqual([chosen.uid]);
     expect(r.state.pending).toEqual({ type: "OFFENSE", player: "P2" }); // on revient à l'étape d'Attaque
   });
 
@@ -281,7 +301,7 @@ describe("Réponses aux choix d'effet", () => {
     const freezer = give(s, "P2", "BT24-105", "hand");
     const st = playCard(s, freezer.uid).state;
     expectRefused(st, { type: "CHOOSE_LIFE", player: "P2", indices: [0, 1] }, "entre 0 et 1");
-    expectRefused(st, { type: "CHOOSE_LIFE", player: "P2", indices: [9] }, "position de Vie invalide");
+    expectRefused(st, { type: "CHOOSE_LIFE", player: "P2", indices: [9] }, "position de carte de Vie invalide");
     expectRefused(st, { type: "CHOOSE_LIFE", player: "P1", indices: [0] }, "c'est à P2");
     const action: Action = { type: "END_MAIN_PHASE", player: "P2" };
     expectRefused(st, action, "décision attendue : CHOOSE_LIFE");

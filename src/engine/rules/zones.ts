@@ -8,17 +8,19 @@ import { removeIfUltimate } from "./keywords";
 /** 9-9-2 : les effets temporaires ne suivent pas une carte qui quitte la Zone de Combat. */
 export function forgetCard(s: GameState, uid: string): void {
   s.powerMods = s.powerMods.filter((m) => m.uid !== uid);
+  s.effects = s.effects.filter((e) => e.uid !== uid);
 }
 
 /**
  * 5-12 / 21-14 : mettre KO une carte de Combat (vers la Dispersion de son propriétaire, ou
  * retirée de la partie si elle a [Ultimate], 22-14-3). Déclenche « quand cette carte quitte la
- * Zone de Combat / est mise KO ».
+ * Zone de Combat / est mise KO », sauf si ses Capacités étaient annulées (9-6-9-2).
  */
 export function koBattleCard(s: GameState, ctx: GameContext, player: PlayerId, card: CardInstance, events: GameEvent[]): void {
   const zone = s.players[player].battle;
   const index = zone.indexOf(card);
   if (index < 0) return;
+  const negated = s.effects.some((e) => e.uid === card.uid && e.kind === "negate_all");
   zone.splice(index, 1);
   forgetCard(s, card.uid);
   events.push({ type: "CARD_KO", player, uid: card.uid, cardId: card.cardId });
@@ -29,5 +31,5 @@ export function koBattleCard(s: GameState, ctx: GameContext, player: PlayerId, c
     card.faceUp = true;
     s.players[card.owner].drop.push(card);
   }
-  queueTriggers(s, { event: "leaves_battle", card }, ctx, events);
+  if (!negated) queueTriggers(s, { event: "leaves_battle", card }, ctx, events);
 }

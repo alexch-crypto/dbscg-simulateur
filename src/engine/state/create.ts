@@ -74,6 +74,7 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     checkpointThen: null,
     nextAutoId: 1,
     powerMods: [],
+    effects: [],
     result: null,
   };
   const events: GameEvent[] = [];

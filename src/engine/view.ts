@@ -86,7 +86,11 @@ function zonesFor(p: PlayerState, viewer: PlayerId): PlayerZonesView {
 function pendingFor(state: GameState, viewer: PlayerId): GameState["pending"] {
   const pending = state.pending;
   if (!pending) return null;
-  if (pending.type === "CHOOSE_CARDS" && pending.player !== viewer) return { ...pending, options: [] };
+  if (pending.type === "CHOOSE_CARDS" && pending.player !== viewer) {
+    // Ni les options, ni les cartes regardées (zone secrète) ne sont montrées à l'autre joueur.
+    const { looked: _hidden, ...rest } = pending;
+    return { ...rest, options: [] };
+  }
   return structuredClone(pending);
 }
 

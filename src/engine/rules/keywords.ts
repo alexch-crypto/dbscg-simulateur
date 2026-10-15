@@ -24,15 +24,35 @@ export const KW = {
 export const cardHasKeyword = (card: CardDefinition | undefined, id: string): boolean =>
   card?.keywords.some((k) => k.id === id) ?? false;
 
-/** Mots-clés actuels d'un Leader (selon sa face visible) ou d'une carte de Combat en jeu. */
+/** La carte ne peut pas passer en mode Action via un effet (« jusqu'à la fin du tour adverse »...). */
+export const readyBlockedByEffect = (s: GameState, uid: string): boolean =>
+  s.effects.some((e) => e.uid === uid && e.kind === "lock_active" && !e.chargeOnly);
+
+/** 9-1 : les Capacités de cette carte sont-elles annulées par un effet en cours ? */
+export const isNegated = (s: GameState, uid: string): boolean =>
+  s.effects.some((e) => e.uid === uid && e.kind === "negate_all");
+
+/**
+ * Mots-clés actuels d'un Leader (selon sa face visible) ou d'une carte de Combat en jeu,
+ * avec les effets en cours : mots-clés acquis, annulés, ou toutes les Capacités annulées.
+ */
 export function keywordsOf(s: GameState, ref: CardRef, db: CardDatabase): Keyword[] {
   const p = s.players[ref.player];
+  let printed: Keyword[];
   if (p.leader.uid === ref.uid) {
     const def = db.get(p.leader.cardId);
-    return (p.leader.side === "front" ? def?.front?.keywords : def?.back?.keywords) ?? [];
+    printed = (p.leader.side === "front" ? def?.front?.keywords : def?.back?.keywords) ?? [];
+  } else {
+    const card = p.battle.find((c) => c.uid === ref.uid);
+    if (!card) return [];
+    printed = db.get(card.cardId)?.keywords ?? [];
   }
-  const card = p.battle.find((c) => c.uid === ref.uid);
-  return card ? (db.get(card.cardId)?.keywords ?? []) : [];
+  // 9-1-5 : une carte dont les Capacités sont annulées ne peut pas en acquérir de nouvelles.
+  if (isNegated(s, ref.uid)) return [];
+  const mine = s.effects.filter((e) => e.uid === ref.uid);
+  const negated = new Set(mine.flatMap((e) => (e.kind === "negate_keyword" ? [e.keyword] : [])));
+  const granted = mine.flatMap((e) => (e.kind === "grant_keyword" ? [{ id: e.keyword }] : []));
+  return [...printed, ...granted].filter((k) => !negated.has(k.id));
 }
 
 export const hasKeyword = (s: GameState, ref: CardRef, id: string, db: CardDatabase): boolean =>

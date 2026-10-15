@@ -17,6 +17,7 @@ import { battleEndStep, startBlockerStep } from "./battle";
 import { checkConditions, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
 import { startResolution } from "./effects";
+import { isNegated } from "./keywords";
 
 // ---------------------------------------------------------------------------
 // Déclencheurs
@@ -45,6 +46,8 @@ const SELF_EVENTS: Record<Trigger["event"], string[]> = {
 /** Carte (uid, numéro, maître, Capacités actuelles) désignée par une référence en jeu. */
 function sourceOf(s: GameState, ref: CardRef, ctx: GameContext) {
   const p = s.players[ref.player];
+  // 9-1 : une carte dont les Capacités sont annulées ne déclenche rien.
+  if (isNegated(s, ref.uid)) return null;
   if (p.leader.uid === ref.uid) {
     const def = ctx.cards.get(p.leader.cardId);
     return { uid: ref.uid, cardId: p.leader.cardId, player: ref.player, abilities: abilitiesOf(ctx.cards, def, p.leader.side) };

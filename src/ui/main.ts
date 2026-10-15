@@ -260,7 +260,23 @@ function battleSummary(view: PlayerView): string {
 
 /** Ordre d'affichage des groupes de boutons. */
 const GROUPS: [string, Action["type"][]][] = [
-  ["Décision", ["CHOOSE_FIRST_PLAYER", "MULLIGAN", "CHARGE_ENERGY", "DECLARE_BLOCKER", "TAKE_LIFE", "COMBO_TO_Z_ENERGY", "CHOOSE_CARDS"]],
+  [
+    "Décision",
+    [
+      "CHOOSE_FIRST_PLAYER",
+      "MULLIGAN",
+      "CHARGE_ENERGY",
+      "DECLARE_BLOCKER",
+      "TAKE_LIFE",
+      "COMBO_TO_Z_ENERGY",
+      "CHOOSE_CARDS",
+      "CHOOSE_LIFE",
+      "CHOOSE_AUTO",
+      "CHOOSE_BLIND",
+      "CHOOSE_OPTION",
+    ],
+  ],
+  ["Capacités", ["ACTIVATE"]],
   ["Jouer une carte", ["PLAY_CARD"]],
   ["Combos", ["COMBO"]],
   ["Attaquer", ["ATTACK"]],
@@ -274,6 +290,10 @@ function actionsPanel(view: PlayerView): string {
   let html = "";
   if (myTurnToDecide) {
     html += `<p class="prompt">${esc(describePending(view.pending))}</p>`;
+    const looked = view.pending?.type === "CHOOSE_CARDS" ? view.pending.looked : undefined;
+    if (looked) {
+      html += `<p class="hint">Cartes regardées (vous seul les voyez) : ${esc(looked.map((c) => cardName(db, c.cardId)).join(", "))}</p>`;
+    }
     const usesPayment = currentActions.some((a) => a.type === "PLAY_CARD" || a.type === "COMBO");
     if (usesPayment) {
       const custom = selectedEnergy.size > 0 || selectedMarkers > 0;

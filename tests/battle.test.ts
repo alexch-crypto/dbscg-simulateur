@@ -106,6 +106,7 @@ function fullBattle(s: GameState, attackAction: Action): { state: GameState; eve
       : p.type === "TAKE_DAMAGE"
         ? { type: "TAKE_LIFE", player: p.player, indices: [...Array(Math.min(p.amount, state.players[p.player].life.length)).keys()] }
       : p.type === "COMBO_TO_Z" ? { type: "COMBO_TO_Z_ENERGY", player: p.player, uid: null }
+      : p.type === "CHOOSE_CARDS" ? { type: "CHOOSE_CARDS", player: p.player, uids: p.options.slice(0, p.min) }
       : endStep(p.player);
     const r = play(state, next);
     state = r.state;
