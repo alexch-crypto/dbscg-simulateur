@@ -206,6 +206,8 @@ export interface EffectResolution {
   saved: Record<string, string[]>;
   /** Cartes en attente d'un second choix dans l'instruction en cours (ex. quel mot-clé annuler). */
   memo: string[];
+  /** 20-5 : nombre X déclaré pour cette Capacité (« déclarez un nombre »). */
+  x?: number;
 }
 
 /**
@@ -220,7 +222,19 @@ export type ContinuousEffect = { uid: string; untilTurn: number; battleOnly?: bo
   | /** « annulez ses Capacités » (9-1). */ { kind: "negate_all" }
   | /** « annulez sa Capacité-clef X ». */ { kind: "negate_keyword"; keyword: string }
   | /** « acquiert [X] ». */ { kind: "grant_keyword"; keyword: string }
+  | /** « augmentez / réduisez de X le coût d'énergie de cette carte » (coût actuel). */ { kind: "cost_mod"; amount: number }
+  | /** 22-15-6 : jouée via [Espace-temps] — transférée en Dimension parallèle à la fin du tour. */ { kind: "warp_at_end_of_turn" }
 );
+
+/** « La prochaine fois que vous activez la Capacité Successeur d'un <...>, réduisez son coût de ... » */
+export interface SuccessorDiscount {
+  player: PlayerId;
+  /** Filtre de la carte avec [Successeur] concernée. */
+  filter: Record<string, unknown>;
+  colors: Partial<Record<string, number>>;
+  generic: number;
+  untilTurn: number;
+}
 
 /** Capacité [Auto.] d'une carte, en état de suspens (9-6-2). */
 export interface QueuedAuto {
@@ -320,6 +334,8 @@ export interface GameState {
   counterWindow: CounterWindowState | null;
   /** Limites d'attaques en cours. */
   attackLimits: AttackLimit[];
+  /** Réductions de coût de la prochaine Capacité [Successeur] (Zarbon, Accompagnateur). */
+  successorDiscounts: SuccessorDiscount[];
   /** Réglages choisis par les joueurs au début de la partie. */
   settings: { counterPrompt: Record<PlayerId, CounterPrompt> };
   result: GameResult | null;

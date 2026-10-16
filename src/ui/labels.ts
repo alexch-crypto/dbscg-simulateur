@@ -114,6 +114,15 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       return a.indices.length === 0 ? "Ne rien choisir" : `Choisir ${a.indices.length} carte(s) au hasard dans la main adverse`;
     case "PASS_COUNTER":
       return "Ne pas contrer";
+    case "SUCCESSOR": {
+      const card = findVisible(view, a.uid);
+      const names = a.sacrifice.map((u) => nameOf(view, db, u)).join(" + ");
+      return `Successeur : jouer ${card ? cardName(db, card.cardId) : a.uid} en sacrifiant ${names}${paymentText(view, db, a.payment.energy, a.payment.markers)}`;
+    }
+    case "OVER_REALM": {
+      const card = findVisible(view, a.uid);
+      return `Espace-temps : jouer ${card ? cardName(db, card.cardId) : a.uid} (toute la Dispersion part en Dimension parallèle)`;
+    }
     case "DECLARE_COUNTER": {
       const card = findVisible(view, a.uid);
       const name = card ? cardName(db, card.cardId) : a.uid;
@@ -135,7 +144,7 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       const def = db.get(cardId);
       const abilities = def?.type === "leader" ? (leader?.side === "back" ? def.back : def.front)?.abilities : def?.abilities;
       const text = String(abilities?.[a.index]?.["text"] ?? "");
-      return `Activer ${nameOf(view, db, a.uid)} : ${text.slice(0, 90)}${text.length > 90 ? "…" : ""}${
+      return `Activer ${nameOf(view, db, a.uid)}${a.x !== undefined ? ` (X = ${a.x})` : ""} : ${text.slice(0, 90)}${text.length > 90 ? "…" : ""}${
         a.payment.energy.length || a.payment.markers ? paymentText(view, db, a.payment.energy, a.payment.markers) : ""
       }`;
     }
@@ -236,6 +245,14 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `${e.player} active le [Contre] de ${cardName(db, e.cardId)} !`;
     case "COUNTER_RESOLVING":
       return `Résolution du [Contre] de ${cardName(db, e.cardId)}.`;
+    case "COST_MODIFIED":
+      return `Coût d'énergie de ${e.uids.map(n).join(", ")} : ${e.amount > 0 ? "+" : ""}${e.amount} pour le tour.`;
+    case "SUCCESSOR_DISCOUNT":
+      return `${e.player} : le coût de son prochain Successeur est réduit.`;
+    case "SUCCESSOR_ACTIVATED":
+      return `${e.player} active le Successeur de ${cardName(db, e.cardId)} en sacrifiant ${e.sacrificed.length} carte(s).`;
+    case "OVER_REALM_ACTIVATED":
+      return `${e.player} active l'Espace-temps de ${cardName(db, e.cardId)} (${e.warped} carte(s) en Dimension parallèle).`;
     case "ATTACK_NEGATED":
       return "L'attaque est annulée.";
     case "ATTACKS_LIMITED":

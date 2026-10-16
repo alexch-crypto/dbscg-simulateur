@@ -59,10 +59,11 @@ export function startResolution(
   steps: EffectStep[],
   then: Continuation,
   events: GameEvent[],
+  x?: number,
 ): void {
   // Un effet déjà en cours (interrompu par celui-ci) est mis de côté et reprendra ensuite.
   if (s.resolving) s.suspended.push(s.resolving);
-  s.resolving = { player, source, steps: [...steps], index: 0, then, saved: {}, memo: [] };
+  s.resolving = { player, source, steps: [...steps], index: 0, then, saved: {}, memo: [], ...(x !== undefined ? { x } : {}) };
   s.pending = null;
   continueResolution(s, ctx, events);
 }
@@ -174,7 +175,7 @@ function candidates(s: GameState, ctx: GameContext, target: Json): Candidate[] |
         result.push({ uid: p.leader.uid, player, zone: "leader" });
       } else if (zone === "battle" || zone === "energy" || zone === "combo") {
         for (const card of p[zone]) {
-          const ok = matchesFilter(card, target["filter"], ctx.cards);
+          const ok = matchesFilter(card, target["filter"], ctx.cards, s);
           if (ok === null) return null;
           if (ok) result.push({ uid: card.uid, player, zone, card });
         }
@@ -339,6 +340,17 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
       if (uids.length > 0) events.push({ type: "KEYWORDS_GRANTED", uids: [...uids], keywords: [...(step["keywords"] as string[])] });
       return false;
     }
+    case "modify_energy_cost": {
+      // « Augmentez / réduisez de X le coût d'énergie de cette carte pour tout le tour. »
+      // « +X » : le nombre déclaré en coût de Capacité (20-5).
+      const raw = step["amount"];
+      const amount = raw === "+X" ? (r.x ?? 0) : raw === "-X" ? -(r.x ?? 0) : typeof raw === "number" ? raw : 0;
+      if (amount === 0) return false;
+      const d = untilTurnFor(s, step["duration"])!;
+      addEffects(s, uids, (uid) => ({ uid, kind: "cost_mod", amount, untilTurn: d.untilTurn }));
+      events.push({ type: "COST_MODIFIED", uids: [...uids], amount });
+      return false;
+    }
     case "move_to_drop": {
       for (const c of chosen) {
         if (!c.card || c.zone === "leader") continue;
@@ -441,6 +453,7 @@ const BOARD_STEPS = new Set([
   "grant_keywords",
   "move_to_drop",
   "remove_markers",
+  "modify_energy_cost",
 ]);
 
 /** Cartes de la main d'un joueur correspondant à un filtre (null si filtre non géré). */
@@ -466,7 +479,10 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       notImplemented(s, describeStep(step), events);
       return false;
     }
-    if (["lock_active", "negate_skills", "negate_one_keyword", "grant_keywords"].includes(step.do) && !untilTurnFor(s, step["duration"])) {
+    if (
+      ["lock_active", "negate_skills", "negate_one_keyword", "grant_keywords", "modify_energy_cost"].includes(step.do) &&
+      !untilTurnFor(s, step["duration"])
+    ) {
       notImplemented(s, describeStep(step), events);
       return false;
     }
@@ -585,7 +601,8 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       const i = zone.findIndex((c) => c.uid === r.source.uid);
       if (i < 0) return false; // la carte n'est plus là : l'effet échoue (9-6-11)
       const card = zone[i]!;
-      const error = enterBattleArea(s, ctx, r.player, card, from, (step["mode"] as "rest" | undefined) ?? "active", events);
+      const via = typeof step["via"] === "string" ? step["via"] : undefined;
+      const error = enterBattleArea(s, ctx, r.player, card, from, (step["mode"] as "rest" | undefined) ?? "active", events, via);
       if (error) events.push({ type: "NOT_IMPLEMENTED", player: r.player, cardId: card.cardId, what: error });
       return false;
     }
@@ -619,6 +636,21 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
         return false;
       });
       if (ok) insertSteps(s, (step["then"] ?? []) as EffectStep[]);
+      return false;
+    }
+
+    case "next_successor_discount": {
+      // « La prochaine fois que vous activez la Capacité Successeur d'un <...> de votre main,
+      // réduisez de (jaune)(1) son coût de Capacité » (pour ce tour).
+      const reduce = (step["reduce"] ?? {}) as Json;
+      s.successorDiscounts.push({
+        player: r.player,
+        filter: (step["filter"] ?? {}) as Json,
+        colors: (reduce["specified"] ?? {}) as Record<string, number>,
+        generic: (reduce["generic"] as number) ?? 0,
+        untilTurn: s.turnNumber,
+      });
+      events.push({ type: "SUCCESSOR_DISCOUNT", player: r.player });
       return false;
     }
 

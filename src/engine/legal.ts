@@ -15,6 +15,7 @@ import {
   suggestComboPayment,
 } from "./rules/battle";
 import { activatableAbilities, suggestActivationPayment } from "./rules/activate";
+import { exactSubsets, overRealmOptions, successorOptions, suggestPayment } from "./rules/alt-play";
 import { awakenBlocker } from "./rules/awaken";
 import { counterOptions, suggestCounterPayment } from "./rules/counters";
 import { availableEnergySources, findPayment } from "./rules/energy";
@@ -43,7 +44,12 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
 
   // 9-4 : Capacités [Activation] activables maintenant (phase principale, étapes d'Attaque/Défense).
   for (const a of activatableAbilities(s, player, ctx)) {
-    actions.push({ type: "ACTIVATE", player, uid: a.uid, index: a.index, payment: suggestActivationPayment(s, player, a, ctx) });
+    const payment = suggestActivationPayment(s, player, a, ctx);
+    if (a.declare) {
+      for (let x = a.declare.min; x <= a.declare.max; x++) actions.push({ type: "ACTIVATE", player, uid: a.uid, index: a.index, payment, x });
+    } else {
+      actions.push({ type: "ACTIVATE", player, uid: a.uid, index: a.index, payment });
+    }
   }
 
   if (pending && pending.player === player) {
@@ -64,7 +70,7 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
           const card = ctx.cards.get(c.cardId);
           if (card?.type !== "battle") continue;
           if (uniqueBlocks(s, c, ctx.cards)) continue; // 22-39
-          const payment = normalPlayPayment(s, player, card);
+          const payment = normalPlayPayment(s, player, c, ctx);
           const chosen = payment && findPayment(sources, payment);
           if (!chosen) continue; // 5-3-3 : coût impossible à payer.
           actions.push({
@@ -81,6 +87,16 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
           for (const target of possibleTargets(s, player)) actions.push({ type: "ATTACK", player, attacker, target });
         }
         if (!awakenBlocker(s, player, ctx)) actions.push({ type: "AWAKEN", player });
+        // 22-38 : [Successeur] — quelques combinaisons exactes de cartes à sacrifier.
+        for (const option of successorOptions(s, player, ctx)) {
+          const variant = option.energyVariants.findIndex((v) => suggestPayment(s, player, v, ctx));
+          const payment = suggestPayment(s, player, option.energyVariants[variant]!, ctx)!;
+          for (const sacrifice of exactSubsets(option.pool, option.target)) {
+            actions.push({ type: "SUCCESSOR", player, uid: option.uid, sacrifice, payment, variant });
+          }
+        }
+        // 22-15 : [Espace-temps].
+        for (const card of overRealmOptions(s, player, ctx)) actions.push({ type: "OVER_REALM", player, uid: card.uid });
         actions.push({ type: "END_MAIN_PHASE", player });
         break;
       }

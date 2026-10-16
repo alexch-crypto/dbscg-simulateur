@@ -206,8 +206,9 @@ describe("Annuler des Capacités", () => {
     expect(r.events).toContainEqual({ type: "KEYWORD_NEGATED", uid: target.uid, keyword: "critical" });
     expect(hasKeyword(r.state, { player: "P1", uid: target.uid }, "critical", ctx.cards)).toBe(false);
     expect(hasKeyword(r.state, { player: "P1", uid: target.uid }, "dual_attack", ctx.cards)).toBe(true);
-    // La 2e partie (réduction du prochain Successeur) n'est pas encore gérée : signalée.
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT27-080" }));
+    // 2e partie : réduction du prochain Successeur d'un <Freezer> de la main.
+    expect(r.events).toContainEqual({ type: "SUCCESSOR_DISCOUNT", player: "P2" });
+    expect(r.state.successorDiscounts).toHaveLength(1);
   });
 });
 

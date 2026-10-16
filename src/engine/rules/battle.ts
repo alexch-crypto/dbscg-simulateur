@@ -12,6 +12,7 @@ import { availableEnergySources, findPayment, type EnergyPayment } from "./energ
 import { checkpoint, queueTriggers } from "./autos";
 import { openCounterWindow } from "./counters";
 import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
+import { comboCostChange } from "./permanents";
 import { payEnergy } from "./play";
 import { forgetCard, koBattleCard } from "./zones";
 
@@ -211,8 +212,15 @@ function ownCardInBattle(s: GameState, player: PlayerId): CardRef {
   return battle.attacker.player === player ? battle.attacker : battle.defender;
 }
 
-/** 5-6-1-1 : un coût de Combo se paie avec des Énergies de n'importe quelle couleur. */
-const comboPayment = (card: CardDefinition): EnergyPayment => ({ colors: {}, generic: card.combo!.cost });
+/**
+ * 5-6-1-1 : un coût de Combo se paie avec des Énergies de n'importe quelle couleur. Une carte de
+ * la main peut le modifier elle-même (ex. Empereur planétaire : -1 avec une Énergie vert-jaune).
+ */
+function comboPayment(s: GameState, player: PlayerId, card: CardInstance, from: "hand" | "battle", ctx: GameContext): EnergyPayment {
+  const base = ctx.cards.get(card.cardId)!.combo!.cost;
+  const change = from === "hand" ? comboCostChange(s, player, card, ctx) : 0;
+  return { colors: {}, generic: Math.max(0, base + change) };
+}
 
 /** 5-7-2 : seule une carte de Combat avec un coût et une puissance de Combo non négatifs peut combo. */
 const canCombo = (card: CardDefinition | undefined): card is CardDefinition =>
@@ -238,8 +246,9 @@ export function comboCandidates(s: GameState, player: PlayerId, ctx: GameContext
 export function suggestComboPayment(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext) {
   const def = ctx.cards.get(card.cardId);
   if (!canCombo(def)) return null;
+  const from = s.players[player].hand.includes(card) ? "hand" : "battle";
   const sources = availableEnergySources(s, player, ctx.cards);
-  const chosen = findPayment(sources, comboPayment(def));
+  const chosen = findPayment(sources, comboPayment(s, player, card, from, ctx));
   if (!chosen) return null;
   return {
     energy: chosen.filter((src) => src.id !== "marker").map((src) => src.id),
@@ -258,8 +267,7 @@ export function combo(
     return "5-7-5 / 5-7-6 : la Combo doit utiliser une carte de Combat de votre main, ou une de vos cartes de Combat en mode Action autre que celle en combat";
   }
   // 5-7-3 : passer en mode Inertie les Énergies du coût de Combo, puis effectuer la Combo.
-  const def = ctx.cards.get(candidate.card.cardId)!;
-  const error = payEnergy(s, action.player, comboPayment(def), action.payment, ctx);
+  const error = payEnergy(s, action.player, comboPayment(s, action.player, candidate.card, candidate.from, ctx), action.payment, ctx);
   if (error) return error;
 
   // 5-7-5-2 / 5-7-6-2 : la carte est placée dans la Zone de Combo.

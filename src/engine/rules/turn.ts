@@ -8,6 +8,8 @@ import { opponentOf, type GameState, type PlayerId } from "../state/types";
 import { drawCards } from "./basic";
 import { checkDefeat } from "./defeat";
 import { cardHasKeyword, KW } from "./keywords";
+import { warpAtEndOfTurn } from "./alt-play";
+import { negatesOwnKeyword } from "./permanents";
 
 /** 7-2 : début du tour de `player`, phase de Recharge jusqu'au choix de l'Énergie. */
 export function startTurn(s: GameState, player: PlayerId, turnNumber: number, events: GameEvent[]): void {
@@ -63,7 +65,11 @@ export function chargeEnergy(
     // L'Énergie posée arrive en mode Action, sauf avec [Fuite d'énergie] : mode Inertie (22-31-2).
     // (Les Capacités qui annulent la Fuite d'énergie viendront à l'étape des effets.)
     // La Zone d'Énergie est publique.
-    card!.mode = cardHasKeyword(ctx.cards.get(card!.cardId), KW.energyExhaust) ? "rest" : "active";
+    // Certaines cartes annulent leur propre Fuite d'énergie (« s'il y a une autre carte vert-jaune
+    // parmi vos Énergies »).
+    const exhaust =
+      cardHasKeyword(ctx.cards.get(card!.cardId), KW.energyExhaust) && !negatesOwnKeyword(s, action.player, card!, KW.energyExhaust, ctx);
+    card!.mode = exhaust ? "rest" : "active";
     card!.faceUp = true;
     p.energy.push(card!);
     events.push({ type: "ENERGY_CHARGED", player: action.player, uid: card!.uid, cardId: card!.cardId, mode: card!.mode });
@@ -92,6 +98,8 @@ export function endMainPhase(s: GameState, events: GameEvent[]): void {
   events.push({ type: "PHASE_STARTED", player: s.turnPlayer, phase: "end" });
   // 7-4-2 à 7-4-6 : effets « à la fin du tour », points de contrôle, fin des effets du tour.
   // 7-4-7 : le tour se termine, l'adversaire devient le joueur actif.
+  // 7-4-2 : effets « à la fin du tour » — 22-15-6 [Espace-temps].
+  warpAtEndOfTurn(s, events);
   events.push({ type: "TURN_ENDED", player: s.turnPlayer });
   startTurn(s, opponentOf(s.turnPlayer), s.turnNumber + 1, events);
 }

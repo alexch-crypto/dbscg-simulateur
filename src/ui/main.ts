@@ -113,6 +113,7 @@ function act(action: Action): void {
     (action.type === "PLAY_CARD" ||
       action.type === "COMBO" ||
       action.type === "ACTIVATE" ||
+      action.type === "SUCCESSOR" ||
       (action.type === "DECLARE_COUNTER" && !action.alt)) &&
     (selectedEnergy.size > 0 || selectedMarkers > 0)
   ) {
@@ -313,7 +314,7 @@ const GROUPS: [string, Action["type"][]][] = [
     ],
   ],
   ["Contres", ["DECLARE_COUNTER", "PASS_COUNTER"]],
-  ["Capacités", ["ACTIVATE"]],
+  ["Capacités", ["ACTIVATE", "SUCCESSOR", "OVER_REALM"]],
   ["Jouer une carte", ["PLAY_CARD"]],
   ["Combos", ["COMBO"]],
   ["Attaquer", ["ATTACK"]],

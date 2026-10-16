@@ -26,8 +26,8 @@ import { finishPlay } from "./play";
 // ---------------------------------------------------------------------------
 
 export type Trigger =
-  /** 9-6-9-4 : une carte est jouée dans la Zone de Combat. */
-  | { event: "played"; card: CardInstance }
+  /** 9-6-9-4 : une carte est jouée dans la Zone de Combat (`via` : Capacité-clef utilisée, ex. « successor »). */
+  | { event: "played"; card: CardInstance; via?: string }
   /** 8-1-3 : une carte attaque / est attaquée. */
   | { event: "attacks"; ref: CardRef }
   | { event: "attacked"; ref: CardRef }
@@ -97,7 +97,10 @@ export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, 
     source.abilities.forEach((ability, index) => {
       if (ability["kind"] !== "auto") return;
       const t = ability["trigger"] as Record<string, unknown> | undefined;
-      if (!t || t["who"] !== "this" || !SELF_EVENTS[trigger.event].includes(t["event"] as string)) return;
+      if (!t || t["who"] !== "this") return;
+      // « Quand cette carte est jouée via [Successeur] / avec [Espace-temps] ».
+      const viaMatch = t["event"] === "played_via" && trigger.event === "played" && trigger.via !== undefined && t["via"] === trigger.via;
+      if (!viaMatch && !SELF_EVENTS[trigger.event].includes(t["event"] as string)) return;
       enqueue(s, source!.player, source!, ability, index, events);
     });
   }

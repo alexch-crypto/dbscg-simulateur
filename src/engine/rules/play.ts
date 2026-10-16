@@ -18,19 +18,23 @@ import {
 import { checkpoint, queueTriggers } from "./autos";
 import { openCounterWindow } from "./counters";
 import { uniqueBlocks } from "./keywords";
+import { handCostChange } from "./permanents";
 
 /**
- * Modificateurs de coût actifs sur une carte (Piccolo Daimaô, Freezer BT24-105...).
- * Vide tant que les capacités ne sont pas gérées : c'est ici qu'elles se brancheront.
+ * Modificateurs de coût actifs sur une carte de la main : ses propres [Permanent] (ex. Piccolo
+ * Daimaô : -1 par carte verte autre que « Saiyan » parmi vos Énergies Z et votre Dispersion).
+ * 1-2-3 : ils ne touchent que le coût total, les orbes de couleur restent dus.
  */
-export function costModifiersFor(_s: GameState, _player: PlayerId, _card: CardDefinition): CostModifier[] {
-  return [];
+export function costModifiersFor(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext): CostModifier[] {
+  const change = handCostChange(s, player, card, ctx);
+  return change === 0 ? [] : [{ kind: "total", amount: change }];
 }
 
 /** Paiement exigé pour jouer normalement une carte depuis la main (coût imprimé + modificateurs). */
-export function normalPlayPayment(s: GameState, player: PlayerId, card: CardDefinition): EnergyPayment | null {
-  if (!card.cost) return null;
-  return paymentForCost(applyCostModifiers(card.cost, costModifiersFor(s, player, card)));
+export function normalPlayPayment(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext): EnergyPayment | null {
+  const def = ctx.cards.get(card.cardId);
+  if (!def?.cost) return null;
+  return paymentForCost(applyCostModifiers(def.cost, costModifiersFor(s, player, card, ctx)));
 }
 
 /**
@@ -92,6 +96,7 @@ export function enterBattleArea(
   from: "hand" | "drop",
   mode: "active" | "rest",
   events: GameEvent[],
+  via?: string,
 ): string | null {
   const def = ctx.cards.get(card.cardId);
   if (def?.type !== "battle") return "seules les cartes de Combat peuvent être jouées ainsi pour l'instant";
@@ -103,7 +108,9 @@ export function enterBattleArea(
   card.faceUp = true;
   s.players[player].battle.push(card);
   events.push({ type: "CARD_PLAYED_BY_SKILL", player, uid: card.uid, cardId: card.cardId, from, mode });
-  queueTriggers(s, { event: "played", card }, ctx, events);
+  // 22-15-6 : jouée via [Espace-temps] => en Dimension parallèle à la fin du tour.
+  if (via === "over_realm") s.effects.push({ uid: card.uid, kind: "warp_at_end_of_turn", untilTurn: s.turnNumber });
+  queueTriggers(s, { event: "played", card, ...(via ? { via } : {}) }, ctx, events);
   return null;
 }
 
@@ -126,7 +133,7 @@ export function playBattleCard(
 
   // 5-5-2-1 : révéler la carte, passer en mode Inertie les Énergies du coût, déclarer et jouer.
   // Si le coût ne peut pas être payé, la carte ne peut pas être déclarée (5-3-3).
-  const payment = normalPlayPayment(s, action.player, card)!;
+  const payment = normalPlayPayment(s, action.player, instance, ctx)!;
   const error = payEnergy(s, action.player, payment, action.payment, ctx);
   if (error) return error;
 

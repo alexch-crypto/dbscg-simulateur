@@ -28,6 +28,8 @@ export interface Activatable {
   energy: EnergyPayment | null;
   /** Autres parties du coût, résolues comme des instructions avant l'effet. */
   otherCosts: EffectStep[];
+  /** « Déclarez un nombre » (20-5) : valeurs possibles de X. */
+  declare?: { min: number; max: number };
 }
 
 /** Timings d'[Activation] autorisés dans la décision en cours (1-5-4-1). */
@@ -49,13 +51,18 @@ function activationZone(ability: RawAbility): "board" | "hand" | "drop" | "combo
 }
 
 /** Analyse le coût de Capacité. Renvoie null si une partie n'est pas encore gérée. */
-export function parseCost(cost: unknown): { energy: EnergyPayment | null; others: EffectStep[] } | null {
+export function parseCost(
+  cost: unknown,
+): { energy: EnergyPayment | null; others: EffectStep[]; declare?: { min: number; max: number } } | null {
   if (cost === undefined) return { energy: null, others: [] };
   if (!Array.isArray(cost)) return null;
   let energy: EnergyPayment | null = null;
+  let declare: { min: number; max: number } | undefined;
   const others: EffectStep[] = [];
   for (const c of cost as Json[]) {
-    if (c["do"] === "pay_energy") {
+    if (c["do"] === "declare_number" && typeof c["min"] === "number" && typeof c["max"] === "number") {
+      declare = { min: c["min"], max: c["max"] };
+    } else if (c["do"] === "pay_energy") {
       energy = { colors: (c["specified"] ?? {}) as EnergyPayment["colors"], generic: (c["generic"] as number) ?? 0 };
     } else if (c["do"] === "life_to_hand" && typeof c["count"] === "number") {
       others.push(c as EffectStep);
@@ -69,7 +76,7 @@ export function parseCost(cost: unknown): { energy: EnergyPayment | null; others
       return null;
     }
   }
-  return { energy, others };
+  return { energy, others, ...(declare ? { declare } : {}) };
 }
 
 /** Les autres coûts (Vie, défausse) peuvent-ils être payés ? */
@@ -130,7 +137,15 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
       if (!cost) return;
       if (cost.energy && !findPayment(sourcesOfEnergy, cost.energy)) return;
       if (!otherCostsPayable(s, player, cost.others, card.uid, ctx)) return;
-      result.push({ uid: card.uid, cardId: card.cardId, index, ability, energy: cost.energy, otherCosts: cost.others });
+      result.push({
+        uid: card.uid,
+        cardId: card.cardId,
+        index,
+        ability,
+        energy: cost.energy,
+        otherCosts: cost.others,
+        ...(cost.declare ? { declare: cost.declare } : {}),
+      });
     });
   }
   return result;
@@ -156,6 +171,13 @@ export function activateAbility(
   const a = activatableAbilities(s, action.player, ctx).find((x) => x.uid === action.uid && x.index === action.index);
   if (!a) return "9-4 : cette Capacité ne peut pas être activée maintenant (moment, condition, limite ou coût)";
   const resume = s.pending!;
+  // 20-5 : « déclarez un nombre » fait partie du coût.
+  if (a.declare) {
+    const x = action.x;
+    if (x === undefined || !Number.isInteger(x) || x < a.declare.min || x > a.declare.max) {
+      return `20-5 : déclarez un nombre entre ${a.declare.min} et ${a.declare.max}`;
+    }
+  }
   // 9-4-2-1 : payer entièrement le coût. D'abord l'énergie (choix du joueur)...
   if (a.energy) {
     const error = payEnergy(s, action.player, a.energy, action.payment, ctx);
@@ -182,6 +204,6 @@ export function activateAbility(
   // jeu] pour l'adversaire, une fois les coûts payés et avant la résolution (9-4-4).
   const playsACard = effect.some((e) => e.do === "play_self");
   const steps = [...a.otherCosts, ...(playsACard ? [{ do: "counter_window_play" }] : []), ...effect];
-  startResolution(s, ctx, action.player, { uid: a.uid, cardId: a.cardId }, steps, { kind: "restore", pending: resume }, events);
+  startResolution(s, ctx, action.player, { uid: a.uid, cardId: a.cardId }, steps, { kind: "restore", pending: resume }, events, action.x);
   return null;
 }

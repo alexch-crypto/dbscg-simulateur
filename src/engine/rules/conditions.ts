@@ -17,7 +17,7 @@ export function leaderFaceOf(s: GameState, player: PlayerId, db: CardDatabase): 
  * Vérifie une condition. Renvoie true / false, ou null si la condition n'est pas encore
  * gérée par le moteur.
  */
-export function checkCondition(s: GameState, player: PlayerId, c: Json, db: CardDatabase): boolean | null {
+export function checkCondition(s: GameState, player: PlayerId, c: Json, db: CardDatabase, self?: string): boolean | null {
   const me = s.players[player];
   const opp = s.players[opponentOf(player)];
   const leader = leaderFaceOf(s, player, db);
@@ -48,10 +48,20 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
       if (c["leader_face"] === "back" && s.players[player].leader.side !== "back") return false;
       return (leader?.character.includes(c["character"] as string) ?? false) && (leader?.colors.includes(c["color"] as never) ?? false);
     }
+    case "energy_has_card":
+      // « S'il y a une carte ... parmi vos Énergies »
+      return me.energy.some((e) => matchesFilter(e, c["filter"], db, s) === true);
+    case "energy_has_other_card":
+      // « ... parmi vos Énergies autre que cette carte »
+      return me.energy.some((e) => e.uid !== self && matchesFilter(e, c["filter"], db, s) === true);
+    case "control_unison":
+    case "control_z_unison":
+      // Pas encore de Zone Unisson : jamais remplie.
+      return false;
     case "energy_count_with_color":
       return me.energy.filter((e) => db.get(e.cardId)?.colors.includes(c["color"] as never)).length >= num("min");
     case "any_of": {
-      const results = (c["of"] as Json[]).map((sub) => checkCondition(s, player, sub, db));
+      const results = (c["of"] as Json[]).map((sub) => checkCondition(s, player, sub, db, self));
       if (results.some((r) => r === true)) return true;
       return results.some((r) => r === null) ? null : false;
     }
@@ -61,10 +71,16 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
 }
 
 /** Vérifie toutes les conditions. Renvoie true / false, ou le nom de la première condition non gérée. */
-export function checkConditions(s: GameState, player: PlayerId, conditions: unknown, db: CardDatabase): boolean | string {
+export function checkConditions(
+  s: GameState,
+  player: PlayerId,
+  conditions: unknown,
+  db: CardDatabase,
+  self?: string,
+): boolean | string {
   if (!Array.isArray(conditions)) return true;
   for (const c of conditions as Json[]) {
-    const r = checkCondition(s, player, c, db);
+    const r = checkCondition(s, player, c, db, self);
     if (r === null) return String(c["check"]);
     if (!r) return false;
   }
@@ -79,14 +95,51 @@ export function energyCostOf(def: CardDefinition | undefined): number {
   return Math.max(total, colors);
 }
 
-/** Une carte correspond-elle au filtre ? Renvoie null si un critère n'est pas géré. */
-export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatabase): boolean | null {
+/**
+ * Coût d'énergie ACTUEL d'une carte en jeu : coût imprimé + augmentations / réductions en cours
+ * (ex. Freezer BT24-105 « augmentez du nombre déclaré le coût de cette carte »).
+ */
+export function currentEnergyCost(s: GameState | undefined, card: CardInstance, db: CardDatabase): number {
+  const base = energyCostOf(db.get(card.cardId));
+  if (!s) return base;
+  const change = s.effects.reduce((sum, e) => sum + (e.uid === card.uid && e.kind === "cost_mod" ? e.amount : 0), 0);
+  return Math.max(0, base + change);
+}
+
+const sameColors = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((c) => b.includes(c));
+
+/**
+ * Une carte correspond-elle au filtre ? Renvoie null si un critère n'est pas géré.
+ * Avec `s`, les coûts comparés sont les coûts actuels (augmentations comprises).
+ */
+export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatabase, s?: GameState): boolean | null {
   if (!filter) return true;
   const def = db.get(card.cardId);
   for (const [key, value] of Object.entries(filter as Json)) {
     switch (key) {
       case "cost_at_most":
-        if (energyCostOf(def) > (value as number)) return false;
+        if (currentEnergyCost(s, card, db) > (value as number)) return false;
+        break;
+      case "cost":
+        if (currentEnergyCost(s, card, db) !== value) return false;
+        break;
+      case "combo_cost":
+        if (def?.combo?.cost !== value) return false;
+        break;
+      case "power":
+        if (def?.power !== value) return false;
+        break;
+      case "not_trait":
+        if (def?.traits.includes(value as string)) return false;
+        break;
+      case "mono_color":
+        if (!sameColors(def?.colors ?? [], [value as string])) return false;
+        break;
+      case "multicolor_exact":
+        // « carte multicolore vert-jaune » : exactement ces couleurs.
+        if (!sameColors(def?.colors ?? [], value as string[])) return false;
+        break;
+      case "not_token":
         break;
       case "mode":
         if (card.mode !== value) return false;

@@ -50,7 +50,15 @@ export type Action =
    * Dispersion). `index` = position de la Capacité sur la carte ; `payment` = Énergies payées
    * pour le coût d'énergie de la Capacité (s'il y en a un).
    */
-  | { type: "ACTIVATE"; player: PlayerId; uid: string; index: number; payment: PaymentChoice }
+  | { type: "ACTIVATE"; player: PlayerId; uid: string; index: number; payment: PaymentChoice; x?: number }
+  /**
+   * 22-38 : activer le [Successeur] d'une carte de sa main. `sacrifice` : cartes de Combat choisies
+   * (total des coûts exactement égal au coût de la carte) ; `variant` : option de coût d'énergie
+   * quand la carte en propose plusieurs (« (vert)/(jaune) »).
+   */
+  | { type: "SUCCESSOR"; player: PlayerId; uid: string; sacrifice: string[]; payment: PaymentChoice; variant?: number }
+  /** 22-15 : activer l'[Espace-temps] d'une carte de sa main. */
+  | { type: "OVER_REALM"; player: PlayerId; uid: string }
   /** 9-7 : ne rien déclarer pendant une fenêtre de contre. */
   | { type: "PASS_COUNTER"; player: PlayerId }
   /**
@@ -132,6 +140,10 @@ export type GameEvent =
   /** Capacité [Activation] activée (9-4) : la carte est révélée si elle était en main. */
   | { type: "ABILITY_ACTIVATED"; player: PlayerId; uid: string; cardId: string; index: number; text: string }
   | { type: "CARDS_LOCKED"; uids: string[] }
+  | { type: "COST_MODIFIED"; uids: string[]; amount: number }
+  | { type: "SUCCESSOR_DISCOUNT"; player: PlayerId }
+  | { type: "SUCCESSOR_ACTIVATED"; player: PlayerId; uid: string; cardId: string; sacrificed: string[] }
+  | { type: "OVER_REALM_ACTIVATED"; player: PlayerId; uid: string; cardId: string; warped: number }
   | { type: "SKILLS_NEGATED"; uids: string[] }
   | { type: "KEYWORD_NEGATED"; uid: string; keyword: string }
   | { type: "KEYWORDS_GRANTED"; uids: string[]; keywords: string[] }

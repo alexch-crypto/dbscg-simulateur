@@ -8,6 +8,7 @@ import { combo, comboToZEnergy, declareAttack, declareBlocker, endStep, takeLife
 import { chooseAuto } from "./rules/autos";
 import { declareCounter, passCounter } from "./rules/counters";
 import { activateAbility } from "./rules/activate";
+import { activateOverRealm, activateSuccessor } from "./rules/alt-play";
 import { answerChoice, answerOption, answerPositions } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
 import { playBattleCard } from "./rules/play";
@@ -26,7 +27,7 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   CHARGE: ["CHARGE_ENERGY"],
   // 1-5-4-1 : [Activation : Principale/Combat] (dont [Éveil]) pendant la phase principale et
   // l'étape d'Attaque du joueur actif, et pendant l'étape de Défense du joueur non actif.
-  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "END_MAIN_PHASE"],
+  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "SUCCESSOR", "OVER_REALM", "END_MAIN_PHASE"],
   BLOCKER: ["DECLARE_BLOCKER"],
   OFFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
   DEFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
@@ -123,6 +124,12 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       break;
     case "ACTIVATE":
       error = activateAbility(next, action, ctx, events);
+      break;
+    case "SUCCESSOR":
+      error = activateSuccessor(next, action, ctx, events);
+      break;
+    case "OVER_REALM":
+      error = activateOverRealm(next, action, ctx, events);
       break;
     case "PASS_COUNTER":
       passCounter(next, ctx, events);
