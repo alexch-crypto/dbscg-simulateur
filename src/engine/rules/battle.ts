@@ -13,21 +13,36 @@ import { checkpoint, queueTriggers } from "./autos";
 import { openCounterWindow } from "./counters";
 import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
 import { comboCostChange } from "./permanents";
+import { leaderFace } from "./leader";
+import { activePermanentEffects } from "./permanents";
 import { payEnergy } from "./play";
-import { forgetCard, koBattleCard } from "./zones";
+import { forgetCard, koBattleCard, removeMarkers } from "./zones";
 
 // ---------------------------------------------------------------------------
 // Outils
 // ---------------------------------------------------------------------------
 
-type InPlay = { kind: "leader" } | { kind: "battle"; card: CardInstance };
+type InPlay = { kind: "leader" } | { kind: "battle"; card: CardInstance } | { kind: "unison"; card: CardInstance };
 
-/** Retrouve un Leader ou une carte de Combat en jeu d'un joueur. */
+/** Retrouve un Leader, une carte de la Zone de Combat ou une Unisson en jeu d'un joueur. */
 function findInPlay(s: GameState, player: PlayerId, uid: string): InPlay | null {
   const p = s.players[player];
   if (p.leader.uid === uid) return { kind: "leader" };
   const card = p.battle.find((c) => c.uid === uid);
-  return card ? { kind: "battle", card } : null;
+  if (card) return { kind: "battle", card };
+  const unison = p.unison.find((c) => c.uid === uid);
+  return unison ? { kind: "unison", card: unison } : null;
+}
+
+/** Carte de la Zone de Combat qui est vraiment une carte de Combat (pas une Extra Z posée). */
+const isBattleCard = (card: CardInstance, ctx: GameContext) => {
+  const type = ctx.cards.get(card.cardId)?.type;
+  return type === "battle" || type === "z_battle";
+};
+
+/** La carte a-t-elle « Cette carte ne peut pas attaquer » (ex. Oolong, Désir immédiat) ? */
+function cannotAttack(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext): boolean {
+  return activePermanentEffects(s, player, card, ctx).some((e) => e["do"] === "cannot_attack" && e["target"] === "this");
 }
 
 /** Puissance d'un Leader (selon sa face) ou d'une carte de Combat (2-7), avec les effets en cours. */
@@ -36,9 +51,7 @@ export function powerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
   if (!found) return 0;
   let base: number;
   if (found.kind === "leader") {
-    const leader = s.players[ref.player].leader;
-    const def = ctx.cards.get(leader.cardId);
-    base = (leader.side === "front" ? def?.front?.power : def?.back?.power) ?? 0;
+    base = leaderFace(s.players[ref.player].leader, ctx.cards)?.power ?? 0;
   } else {
     base = ctx.cards.get(found.card.cardId)?.power ?? 0;
   }
@@ -63,8 +76,8 @@ function backToMain(s: GameState): void {
 // 8-1 : déclaration d'attaque
 // ---------------------------------------------------------------------------
 
-/** Cartes qui peuvent attaquer : Leader et cartes de Combat en mode Action (8-1-1). */
-export function possibleAttackers(s: GameState, player: PlayerId): string[] {
+/** Cartes qui peuvent attaquer : Leader, cartes de Combat et Unisson en mode Action (8-1-1). */
+export function possibleAttackers(s: GameState, player: PlayerId, ctx: GameContext): string[] {
   // 7-3-4-4-1 : le premier joueur ne peut pas attaquer lors de son premier tour.
   if (s.turnNumber === 1 && player === s.firstPlayer) return [];
   const p = s.players[player];
@@ -74,14 +87,22 @@ export function possibleAttackers(s: GameState, player: PlayerId): string[] {
   const battleBlocked = limits.some((l) => l.remaining <= 0);
   return [
     ...(p.leader.mode === "active" && !leaderBlocked ? [p.leader.uid] : []),
-    ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active").map((c) => c.uid)),
+    ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active" && isBattleCard(c, ctx)).map((c) => c.uid)),
+    ...(leaderBlocked ? [] : p.unison.filter((c) => c.mode === "active" && !cannotAttack(s, player, c, ctx)).map((c) => c.uid)),
   ];
 }
 
-/** Cibles possibles : le Leader adverse, ou une carte de Combat adverse en mode Inertie (8-1-1). */
-export function possibleTargets(s: GameState, player: PlayerId): string[] {
+/**
+ * Cibles possibles (8-1-1) : le Leader adverse, l'Unisson adverse, ou une carte de Combat adverse
+ * en mode Inertie.
+ */
+export function possibleTargets(s: GameState, player: PlayerId, ctx: GameContext): string[] {
   const opp = s.players[opponentOf(player)];
-  return [opp.leader.uid, ...opp.battle.filter((c) => c.mode === "rest").map((c) => c.uid)];
+  return [
+    opp.leader.uid,
+    ...opp.unison.map((c) => c.uid),
+    ...opp.battle.filter((c) => c.mode === "rest" && isBattleCard(c, ctx)).map((c) => c.uid),
+  ];
 }
 
 /** Bloqueurs disponibles : cartes en mode Action avec [Bloqueur], autres que la carte attaquée (22-4-2). */
@@ -110,14 +131,16 @@ export function declareAttack(
   }
   const attacker = findInPlay(s, player, action.attacker);
   if (!attacker) return "8-1-1 : l'attaquant doit être votre Leader ou une de vos cartes de Combat";
-  if (!possibleAttackers(s, player).includes(action.attacker)) {
+  if (!possibleAttackers(s, player, ctx).includes(action.attacker)) {
     return "8-1-1 : l'attaquant doit être en mode Action (et ne pas être bloqué par un effet qui limite les attaques)";
   }
   const defenderPlayer = opponentOf(player);
   const target = findInPlay(s, defenderPlayer, action.target);
-  if (!target) return "8-1-1 : la cible doit être le Leader adverse ou une carte de Combat adverse";
-  if (target.kind === "battle" && target.card.mode !== "rest") {
-    return "8-1-1 : une carte de Combat adverse ne peut être attaquée que si elle est en mode Inertie";
+  if (!target || !possibleTargets(s, player, ctx).includes(action.target)) {
+    if (target?.kind === "battle" && target.card.mode !== "rest") {
+      return "8-1-1 : une carte de Combat adverse ne peut être attaquée que si elle est en mode Inertie";
+    }
+    return "8-1-1 : la cible doit être le Leader adverse, son Unisson ou une de ses cartes de Combat en mode Inertie";
   }
 
   // 8-1-1 : passer l'attaquant du mode Action au mode Inertie. 8-1-2 : un combat se lance.
@@ -159,7 +182,7 @@ export function declareAttack(
 export function startBlockerStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
   // 8-1-6-1 : si l'attaque a été annulée, on passe directement à l'étape de Fin de Combat.
   if (s.battle!.negated) {
-    battleEndStep(s, events);
+    battleEndStep(s, ctx, events);
     return;
   }
   if (possibleBlockers(s, ctx).length > 0) {
@@ -308,6 +331,11 @@ export function combo(
 
 export function endStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
   const battle = s.battle!;
+  // 8-2-4-3-1-1 / 13-5-1 : si la carte de défense est une Unisson, l'étape de Défense est sautée.
+  if (battle.step === "offense" && findInPlay(s, battle.defender.player, battle.defender.uid)?.kind === "unison") {
+    damageStep(s, ctx, events);
+    return;
+  }
   if (battle.step === "offense") {
     // 8-2-4-3-1-1 : passez à l'étape de Défense (8-3).
     // 8-3-2 : capacités « Au début de l'étape de Défense ». 8-3-3 : point de contrôle.
@@ -353,6 +381,10 @@ function damageStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
       // 8-4-6-2-1 : la carte de défense est mise KO (5-12-1 : placée dans la Dispersion ;
       // 22-14-3 : retirée de la partie si elle a [Ultimate]).
       koBattleCard(s, ctx, battle.defender.player, defender.card, events);
+    } else if (defender?.kind === "unison") {
+      // 13-5-2 : retirer autant de marqueurs que les dégâts que la carte infligerait à un Leader
+      // ([Frappe]), sinon un seul. À 0 marqueur, l'Unisson quitte la Zone Unisson (21-9).
+      removeMarkers(s, ctx, battle.defender.player, defender.card, strikeDamage(s, battle.attacker, ctx.cards), events);
     }
   }
   // 8-4-8 : point de contrôle (ex. « quand cette carte est mise KO »), puis 8-4-9.
@@ -376,6 +408,7 @@ export const lifeCardsToChoose = (s: GameState, player: PlayerId, amount: number
 export function takeLife(
   s: GameState,
   action: Extract<Action, { type: "TAKE_LIFE" }>,
+  ctx: GameContext,
   events: GameEvent[],
 ): string | null {
   const pending = s.pending as Extract<GameState["pending"], { type: "TAKE_DAMAGE" }>;
@@ -415,18 +448,18 @@ export function takeLife(
   s.pending = null;
   // 21-2 : défaite immédiate si la Zone de Vie est vide.
   if (checkDefeat(s, events)) return null;
-  battleEndStep(s, events);
+  battleEndStep(s, ctx, events);
   return null;
 }
 
 /** 8-4-7 à 8-5 : fin de l'étape des Dégâts, puis étape de Fin de Combat. */
-export function battleEndStep(s: GameState, events: GameEvent[]): void {
+export function battleEndStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
   // 8-4-7 : capacités « Quand l'étape des Dégâts se termine ». 8-4-8 : point de contrôle.
   // 8-4-9 : passez à l'étape de Fin de Combat.
   s.battle!.step = "end";
   events.push({ type: "BATTLE_STEP", step: "end" });
   // 8-5-1 : point de contrôle. 8-5-2 : le joueur actif d'abord.
-  askComboToZ(s, s.turnPlayer, events);
+  askComboToZ(s, ctx, s.turnPlayer, events);
 }
 
 // ---------------------------------------------------------------------------
@@ -434,19 +467,20 @@ export function battleEndStep(s: GameState, events: GameEvent[]): void {
 // ---------------------------------------------------------------------------
 
 /** 8-5-2 / 8-5-3 : propose au joueur de placer une carte de Combo en Énergie Z (s'il en a). */
-function askComboToZ(s: GameState, player: PlayerId, events: GameEvent[]): void {
+function askComboToZ(s: GameState, ctx: GameContext, player: PlayerId, events: GameEvent[]): void {
   if (s.players[player].combo.length > 0) {
     s.pending = { type: "COMBO_TO_Z", player };
   } else if (player === s.turnPlayer) {
-    askComboToZ(s, opponentOf(player), events);
+    askComboToZ(s, ctx, opponentOf(player), events);
   } else {
-    finishBattle(s, events);
+    finishBattle(s, ctx, events);
   }
 }
 
 export function comboToZEnergy(
   s: GameState,
   action: Extract<Action, { type: "COMBO_TO_Z_ENERGY" }>,
+  ctx: GameContext,
   events: GameEvent[],
 ): string | null {
   const p = s.players[action.player];
@@ -460,12 +494,12 @@ export function comboToZEnergy(
     s.players[card!.owner].zEnergy.push(card!);
     events.push({ type: "Z_ENERGY_PLACED", player: action.player, uid: card!.uid, cardId: card!.cardId });
   }
-  if (action.player === s.turnPlayer) askComboToZ(s, opponentOf(action.player), events);
-  else finishBattle(s, events);
+  if (action.player === s.turnPlayer) askComboToZ(s, ctx, opponentOf(action.player), events);
+  else finishBattle(s, ctx, events);
   return null;
 }
 
-function finishBattle(s: GameState, events: GameEvent[]): void {
+function finishBattle(s: GameState, ctx: GameContext, events: GameEvent[]): void {
   // 8-5-4 : point de contrôle.
   // 8-5-5 : les augmentations de puissance des Combos disparaissent (elles ne sont calculées
   // qu'à l'étape des Dégâts dans ce moteur).
@@ -482,7 +516,8 @@ function finishBattle(s: GameState, events: GameEvent[]): void {
   for (const auto of s.battle!.pendingAutos) {
     if (auto.kind !== "dual_attack") continue;
     const p = s.players[auto.card.player];
-    const target = p.leader.uid === auto.card.uid ? p.leader : p.battle.find((c) => c.uid === auto.card.uid);
+    const target =
+      p.leader.uid === auto.card.uid ? p.leader : [...p.battle, ...p.unison].find((c) => c.uid === auto.card.uid);
     if (!target) continue; // la carte a quitté le jeu : rien à relever
     s.turnUsage[auto.usageKey] = (s.turnUsage[auto.usageKey] ?? 0) + 1;
     if (target.mode === "rest" && !readyBlockedByEffect(s, auto.card.uid)) {
@@ -490,10 +525,14 @@ function finishBattle(s: GameState, events: GameEvent[]): void {
       events.push({ type: "CARD_READIED", player: auto.card.player, uid: auto.card.uid, reason: "dual_attack" });
     }
   }
+  // 8-5-9 : « À la fin du combat pendant lequel cette carte a été attaquée » (ex. Leader Z).
+  const attacked = s.battle!.target;
   // 8-5-11 / 8-5-12 : fin des effets « pour tout le combat ».
   s.powerMods = s.powerMods.filter((m) => m.until !== "battle");
   s.effects = s.effects.filter((e) => !e.battleOnly);
-  // 8-5-13 : le combat s'achève, retour à 7-3-3.
+  // 8-5-13 : le combat s'achève, retour à 7-3-3 (après un point de contrôle).
   events.push({ type: "BATTLE_ENDED" });
-  backToMain(s);
+  s.battle = null;
+  queueTriggers(s, { event: "battle_end_attacked", ref: attacked }, ctx, events);
+  checkpoint(s, ctx, { kind: "restore", pending: { type: "MAIN", player: s.turnPlayer } }, events);
 }

@@ -396,7 +396,7 @@ describe("Robustesse : parties jouées au hasard", () => {
 
   const allCardsOf = (s: GameState, p: PlayerId) => {
     const z = s.players[p];
-    return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp];
+    return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [{ ...z.leader.z, owner: p }] : [])];
   };
 
   it("tous les coups proposés sont acceptés, et aucune carte ne disparaît", () => {
@@ -414,8 +414,8 @@ describe("Robustesse : parties jouées au hasard", () => {
         s = r.state;
         for (const p of ["P1", "P2"] as const) {
           const cards = allCardsOf(s, p);
-          expect(cards).toHaveLength(53);
-          expect(new Set(cards.map((c) => c.uid)).size).toBe(53);
+          expect(cards).toHaveLength(62);
+          expect(new Set(cards.map((c) => c.uid)).size).toBe(62);
           expect(cards.every((c) => c.owner === p)).toBe(true);
         }
       }

@@ -6,6 +6,7 @@
 
 import type { CardDatabase, CardDefinition, Keyword } from "../cards/types";
 import type { CardInstance, CardRef, GameState } from "../state/types";
+import { leaderFace } from "./leader";
 
 export const KW = {
   blocker: "blocker", // 22-4
@@ -40,8 +41,7 @@ export function keywordsOf(s: GameState, ref: CardRef, db: CardDatabase): Keywor
   const p = s.players[ref.player];
   let printed: Keyword[];
   if (p.leader.uid === ref.uid) {
-    const def = db.get(p.leader.cardId);
-    printed = (p.leader.side === "front" ? def?.front?.keywords : def?.back?.keywords) ?? [];
+    printed = leaderFace(p.leader, db)?.keywords ?? [];
   } else {
     const card = p.battle.find((c) => c.uid === ref.uid);
     if (!card) return [];
@@ -76,11 +76,14 @@ export function readyAfterBattleCount(s: GameState, ref: CardRef, db: CardDataba
 }
 
 /**
- * 22-14-3 : une carte quitte la Zone de Combat. Une carte [Ultimate] est retirée de la partie
- * au lieu d'aller dans sa zone de destination. Renvoie true si elle a été retirée.
+ * Une carte quitte la Zone de Combat / Unisson / de Combo. Elle est retirée de la partie au lieu
+ * d'aller dans sa zone de destination si c'est une carte Z (14-1-4) ou une carte [Ultimate]
+ * (22-14-3). Renvoie true si elle a été retirée.
  */
 export function removeIfUltimate(s: GameState, card: CardInstance, db: CardDatabase): boolean {
-  if (!cardHasKeyword(db.get(card.cardId), KW.ultimate)) return false;
+  const def = db.get(card.cardId);
+  if (!cardHasKeyword(def, KW.ultimate) && !def?.type.startsWith("z_")) return false;
+  delete card.markers;
   card.mode = "active";
   card.faceUp = true;
   s.players[card.owner].removed.push(card);

@@ -81,6 +81,7 @@ aside { display: flex; flex-direction: column; gap: 12px; position: sticky; top:
 .mini-name { font-weight: 600; line-height: 1.15; flex: 1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .mini-power { font-weight: 700; }
 .mini-combo { font-weight: 400; color: var(--muted); }
+.markers { color: #8a4dd6; font-weight: 700; }
 
 /* Fiche détaillée de la carte sélectionnée. */
 .detail { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fbfbfd; font-size: 12px; }

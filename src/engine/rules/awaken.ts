@@ -9,13 +9,12 @@ import type { CardFace } from "../cards/types";
 import type { Action, GameContext, GameEvent } from "../protocol";
 import type { EffectStep, GameState, PlayerId } from "../state/types";
 import { checkCondition } from "./conditions";
+import { leaderFace as leaderFaceOf } from "./leader";
 import { startResolution } from "./effects";
 
 /** Face visible du Leader d'un joueur. */
 export function leaderFace(s: GameState, player: PlayerId, ctx: GameContext): CardFace | undefined {
-  const leader = s.players[player].leader;
-  const card = ctx.cards.get(leader.cardId);
-  return leader.side === "front" ? card?.front : card?.back;
+  return leaderFaceOf(s.players[player].leader, ctx.cards);
 }
 
 interface AwakenAbility {

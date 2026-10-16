@@ -45,7 +45,8 @@ import { openCounterWindow } from "./counters";
 import { checkDefeat } from "./defeat";
 import { keywordsOf, readyBlockedByEffect } from "./keywords";
 import { enterBattleArea } from "./play";
-import { forgetCard, koBattleCard } from "./zones";
+import { removeLeaderZ } from "./zdeck";
+import { forgetCard, koBattleCard, removeMarkers } from "./zones";
 
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -147,7 +148,7 @@ function untilTurnFor(s: GameState, duration: unknown): { untilTurn: number; bat
 // Cibles en jeu (Leader, Zone de Combat, Énergie, Zone de Combo)
 // ---------------------------------------------------------------------------
 
-type BoardZone = "leader" | "battle" | "energy" | "combo";
+type BoardZone = "leader" | "battle" | "energy" | "combo" | "unison";
 
 /** Une carte en jeu qu'un effet peut choisir. */
 interface Candidate {
@@ -173,14 +174,15 @@ function candidates(s: GameState, ctx: GameContext, target: Json): Candidate[] |
     for (const zone of zones) {
       if (zone === "leader") {
         result.push({ uid: p.leader.uid, player, zone: "leader" });
-      } else if (zone === "battle" || zone === "energy" || zone === "combo") {
+      } else if (zone === "battle" || zone === "energy" || zone === "combo" || zone === "unison") {
         for (const card of p[zone]) {
+          // « carte de Combat » : pas les Extras Z posées dans la Zone de Combat.
+          if (zone === "battle" && !["battle", "z_battle"].includes(ctx.cards.get(card.cardId)?.type ?? "")) continue;
           const ok = matchesFilter(card, target["filter"], ctx.cards, s);
           if (ok === null) return null;
           if (ok) result.push({ uid: card.uid, player, zone, card });
         }
-      } else if (zone !== "unison") {
-        // Pas encore de Zone Unisson : aucune cible. Toute autre zone n'est pas gérée.
+      } else {
         return null;
       }
     }
@@ -192,7 +194,7 @@ function findCandidate(s: GameState, uid: string): Candidate | null {
   for (const player of ["P1", "P2"] as const) {
     const p = s.players[player];
     if (p.leader.uid === uid) return { uid, player, zone: "leader" };
-    for (const zone of ["battle", "energy", "combo"] as const) {
+    for (const zone of ["battle", "energy", "combo", "unison"] as const) {
       const card = p[zone].find((c) => c.uid === uid);
       if (card) return { uid, player, zone, card };
     }
@@ -338,6 +340,23 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
         addEffects(s, uids, (uid) => ({ uid, kind: "grant_keyword", keyword, untilTurn: d.untilTurn }));
       }
       if (uids.length > 0) events.push({ type: "KEYWORDS_GRANTED", uids: [...uids], keywords: [...(step["keywords"] as string[])] });
+      return false;
+    }
+    case "remove_markers": {
+      // 21-9 : retirer des marqueurs d'une Unisson (à 0, elle quitte la Zone Unisson).
+      const n = typeof step["count"] === "number" ? step["count"] : 1;
+      for (const c of chosen) if (c.zone === "unison") removeMarkers(s, ctx, c.player, c.card!, n, events);
+      return false;
+    }
+    case "z_energy_to_drop": {
+      // Placer des Énergies Z dans sa Dispersion (coût ou effet).
+      const p = s.players[r.player];
+      const cards = uids.map((uid) => p.zEnergy.find((c) => c.uid === uid)).filter((c): c is CardInstance => c !== undefined);
+      for (const c of cards) {
+        p.zEnergy.splice(p.zEnergy.indexOf(c), 1);
+        s.players[c.owner].drop.push(c);
+      }
+      if (cards.length > 0) events.push({ type: "Z_ENERGY_PAID", player: r.player, cardIds: cards.map((c) => c.cardId) });
       return false;
     }
     case "modify_energy_cost": {
@@ -506,8 +525,6 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       notImplemented(s, describeStep(step), events);
       return false;
     }
-    // remove_markers : pas encore de Zone Unisson, donc aucune cible (5-2-6).
-    if (step.do === "remove_markers") return false;
     let pool = candidates(s, ctx, target);
     if (pool === null) {
       notImplemented(s, describeStep(step), events);
@@ -654,6 +671,40 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       return false;
     }
 
+    case "spirit_boost": {
+      // 22-43 [Boost d'Esprit X] (coût) : retirer X marqueurs de son Unisson.
+      const unison = p.unison[0];
+      if (unison) removeMarkers(s, ctx, r.player, unison, (step["markers"] as number) ?? 1, events);
+      return false;
+    }
+
+    case "z_energy_to_drop": {
+      // Choisir des Énergies Z de sa Zone d'Énergie Z (5-4 : couleur sans importance).
+      const options = p.zEnergy.map((c) => c.uid);
+      const n = typeof step["count"] === "number" ? step["count"] : 1;
+      return askOrApply(s, ctx, step, r.player, options, { min: Math.min(n, options.length), max: Math.min(n, options.length) }, events);
+    }
+
+    case "remove_from_game": {
+      if (step["target"] !== "this") break;
+      // « Retirez cette carte de la partie » : Leader Z posé sur le Leader (15-1-5), ou carte
+      // de la Zone de Combat (ex. Extra Z).
+      if (p.leader.z && (p.leader.z.uid === r.source.uid || p.leader.uid === r.source.uid)) {
+        removeLeaderZ(s, r.player, events);
+        return false;
+      }
+      const card = p.battle.find((c) => c.uid === r.source.uid);
+      if (card) {
+        p.battle.splice(p.battle.indexOf(card), 1);
+        forgetCard(s, card.uid);
+        card.faceUp = true;
+        card.mode = "active";
+        s.players[card.owner].removed.push(card);
+        events.push({ type: "CARD_REMOVED", player: r.player, uid: card.uid, cardId: card.cardId });
+      }
+      return false;
+    }
+
     case "negate_attack": {
       // 8-1-6-1 : l'attaque est annulée, le combat passe directement à sa fin.
       if (s.battle && !s.battle.negated) {
@@ -722,6 +773,8 @@ function canPay(s: GameState, ctx: GameContext, player: PlayerId, cost: EffectSt
     if (c.do === "discard") {
       const options = handOptions(s, ctx, player, c["filter"]);
       if (!options || options.length < ((c["count"] as number) ?? 1)) return false;
+    } else if (c.do === "z_energy_to_drop") {
+      if (s.players[player].zEnergy.length < ((c["count"] as number) ?? 1)) return false;
     } else if (c.do === "life_to_hand") {
       if (s.players[player].life.length < ((c["count"] as number) ?? 1)) return false;
     }

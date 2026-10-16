@@ -17,6 +17,8 @@ export interface VisibleCard {
   cardId: string;
   owner: PlayerId;
   mode: Mode;
+  /** Marqueurs (Unissons). */
+  markers?: number;
 }
 /** Carte cachée : on sait seulement qu'elle est là (ni uid, ni numéro de carte). */
 export interface HiddenCard {
@@ -41,6 +43,10 @@ export interface PlayerZonesView {
   zEnergy: VisibleCard[];
   warp: VisibleCard[];
   removed: VisibleCard[];
+  /** Deck Z : consultable par son propriétaire, caché pour l'adversaire (3-12-2 / 3-12-3). */
+  zDeck: CardView[];
+  /** Zone Unisson (publique, avec le nombre de marqueurs). */
+  unison: VisibleCard[];
 }
 
 export interface PlayerView {
@@ -63,7 +69,13 @@ export interface PlayerView {
   players: Record<PlayerId, PlayerZonesView>;
 }
 
-const show = (c: CardInstance): VisibleCard => ({ uid: c.uid, cardId: c.cardId, owner: c.owner, mode: c.mode });
+const show = (c: CardInstance): VisibleCard => ({
+  uid: c.uid,
+  cardId: c.cardId,
+  owner: c.owner,
+  mode: c.mode,
+  ...(c.markers !== undefined ? { markers: c.markers } : {}),
+});
 const HIDDEN: HiddenCard = { hidden: true };
 
 function zonesFor(p: PlayerState, viewer: PlayerId): PlayerZonesView {
@@ -82,6 +94,8 @@ function zonesFor(p: PlayerState, viewer: PlayerId): PlayerZonesView {
     zEnergy: p.zEnergy.map(show),
     warp: p.warp.map(show),
     removed: p.removed.map(show),
+    zDeck: p.zDeck.map((c) => (isOwner || c.faceUp ? show(c) : HIDDEN)),
+    unison: p.unison.map(show),
   };
 }
 

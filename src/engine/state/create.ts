@@ -46,6 +46,10 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
       mode: "active",
       faceUp: false,
     }));
+    // 6-2-1-8 : le deck Z est placé dans la Zone du Deck Z.
+    const zDeck: CardInstance[] = Object.entries(deck.zDeck)
+      .flatMap(([cardId, n]) => Array<string>(n).fill(cardId))
+      .map((cardId, i) => ({ uid: `${id}-Z${i + 1}`, cardId, owner: id, mode: "active", faceUp: false }));
     return {
       id,
       leader: { uid: `${id}-L`, cardId: deck.leader, side: "front", mode: "active" },
@@ -60,6 +64,8 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
       zEnergy: [],
       warp: [],
       removed: [],
+      zDeck,
+      unison: [],
     };
   };
 

@@ -57,6 +57,14 @@ export type Action =
    * quand la carte en propose plusieurs (« (vert)/(jaune) »).
    */
   | { type: "SUCCESSOR"; player: PlayerId; uid: string; sacrifice: string[]; payment: PaymentChoice; variant?: number }
+  /**
+   * 14-18 : jouer une carte de son deck Z (carte de Combat Z, Extra Z, Unisson Z) en payant son
+   * coût d'Énergie et son coût d'Énergie Z (`zEnergy` : cartes de la Zone d'Énergie Z placées dans
+   * la Dispersion). `x` : coût X choisi pour une Unisson (= ses marqueurs).
+   */
+  | { type: "PLAY_Z"; player: PlayerId; uid: string; payment: PaymentChoice; zEnergy: string[]; x?: number }
+  /** [Éveil Z] d'un Leader Z de son deck Z. */
+  | { type: "Z_AWAKEN"; player: PlayerId; uid: string; payment: PaymentChoice; zEnergy: string[] }
   /** 22-15 : activer l'[Espace-temps] d'une carte de sa main. */
   | { type: "OVER_REALM"; player: PlayerId; uid: string }
   /** 9-7 : ne rien déclarer pendant une fenêtre de contre. */
@@ -140,6 +148,16 @@ export type GameEvent =
   /** Capacité [Activation] activée (9-4) : la carte est révélée si elle était en main. */
   | { type: "ABILITY_ACTIVATED"; player: PlayerId; uid: string; cardId: string; index: number; text: string }
   | { type: "CARDS_LOCKED"; uids: string[] }
+  | { type: "MARKERS_CHANGED"; player: PlayerId; uid: string; cardId: string; markers: number }
+  /** Une carte Z est déclarée depuis le deck Z (révélée). */
+  | { type: "Z_PLAY_DECLARED"; player: PlayerId; uid: string; cardId: string; zEnergy: number }
+  /** Unisson jouée dans la Zone Unisson, avec ses marqueurs. */
+  | { type: "UNISON_PLAYED"; player: PlayerId; uid: string; cardId: string; markers: number }
+  /** Extra Z placée dans la Zone de Combat. */
+  | { type: "EXTRA_Z_PLACED"; player: PlayerId; uid: string; cardId: string }
+  /** [Éveil Z] : un Leader Z est posé par-dessus le Leader. */
+  | { type: "LEADER_Z"; player: PlayerId; uid: string; cardId: string }
+  | { type: "Z_ENERGY_PAID"; player: PlayerId; cardIds: string[] }
   | { type: "COST_MODIFIED"; uids: string[]; amount: number }
   | { type: "SUCCESSOR_DISCOUNT"; player: PlayerId }
   | { type: "SUCCESSOR_ACTIVATED"; player: PlayerId; uid: string; cardId: string; sacrificed: string[] }

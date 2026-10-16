@@ -24,6 +24,8 @@ export interface CardInstance {
    * Dans une zone publique, la carte est toujours visible et ce champ n'est pas utilisé.
    */
   faceUp: boolean;
+  /** Marqueurs posés sur la carte (Unissons, 1-11). */
+  markers?: number;
 }
 
 export interface LeaderState {
@@ -32,6 +34,11 @@ export interface LeaderState {
   /** Face avant ou face arrière (après Éveil, 22-2-4). */
   side: "front" | "back";
   mode: Mode;
+  /**
+   * Leader Z posé par-dessus le Leader ([Éveil Z], 15-1). Tant qu'il est là, ce sont ses
+   * informations qui comptent ; s'il part, le Leader d'origine reste (15-1-5-1).
+   */
+  z?: { uid: string; cardId: string };
 }
 
 /** Zones contenant des cartes. L'ordre des listes compte : index 0 = dessus du deck. */
@@ -48,6 +55,10 @@ export interface PlayerZones {
   warp: CardInstance[];
   /** Cartes retirées de la partie (ex. [Ultimate], 22-14-3) : visibles par tous. */
   removed: CardInstance[];
+  /** Zone du Deck Z (3-12) : secrète pour l'adversaire, consultable par son propriétaire. */
+  zDeck: CardInstance[];
+  /** Zone Unisson (3-11) : une seule carte à la fois. */
+  unison: CardInstance[];
 }
 export type ZoneName = keyof PlayerZones;
 
@@ -139,6 +150,8 @@ export type Continuation =
   | { kind: "battle_end_step" }
   /** 5-5-2-3 : après la fenêtre de contre d'une mise en jeu, jouer la carte. */
   | { kind: "finish_play"; player: PlayerId; uid: string }
+  /** 16-2-1-3 / 17-2-1-3 / 18-2-1-3 : après la fenêtre de contre, la carte Z arrive dans sa zone. */
+  | { kind: "finish_z_play"; player: PlayerId; uid: string; markers: number }
   /** Reprendre l'effet en cours de résolution (après une fenêtre de contre ouverte au milieu). */
   | { kind: "run_resolution" }
   /** 8-1-5 : après la fenêtre de contre d'une attaque, point de contrôle puis blocage. */

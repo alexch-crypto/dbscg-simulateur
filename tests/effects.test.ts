@@ -309,7 +309,8 @@ describe("Robustesse : parties au hasard avec toutes les nouvelles capacités", 
   it("tous les coups proposés sont acceptés et aucune carte ne disparaît (40 parties)", () => {
     const allCards = (s: GameState, p: PlayerId) => {
       const z = s.players[p];
-      return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed];
+      // Deck principal (53) + deck Z (9), où qu'elles soient (le Leader Z est posé sur le Leader).
+      return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [z.leader.z] : [])];
     };
     for (let seed = 200; seed < 240; seed++) {
       let s = play(p2Main(seed), { type: "END_MAIN_PHASE", player: "P2" }).state;
@@ -322,7 +323,7 @@ describe("Robustesse : parties au hasard avec toutes les nouvelles capacités", 
         const r = applyAction(s, action, ctx);
         if (!r.ok) throw new Error(`seed ${seed}, coup ${move} : ${JSON.stringify(action)} → ${r.error}`);
         s = r.state;
-        for (const p of ["P1", "P2"] as const) expect(allCards(s, p)).toHaveLength(53);
+        for (const p of ["P1", "P2"] as const) expect(allCards(s, p)).toHaveLength(62);
       }
     }
   });

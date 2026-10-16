@@ -7,6 +7,7 @@
 
 import type { CardDatabase, Color, EnergyCost } from "../cards/types";
 import type { GameState, PlayerId } from "../state/types";
+import { leaderFace } from "./leader";
 
 export interface EnergyPayment {
   /** Orbes de couleur obligatoires. */
@@ -132,9 +133,7 @@ export function findPayment(available: readonly EnergySource[], payment: EnergyP
 
 /** Couleurs du Leader d'un joueur, selon la face visible. */
 export function leaderColors(s: GameState, player: PlayerId, db: CardDatabase): Color[] {
-  const leader = s.players[player].leader;
-  const card = db.get(leader.cardId);
-  return (leader.side === "front" ? card?.front?.colors : card?.back?.colors) ?? [];
+  return leaderFace(s.players[player].leader, db)?.colors ?? [];
 }
 
 /**

@@ -3,14 +3,13 @@
 // Format : celui du fichier de cartes (docs/LISEZMOI-cartes.md).
 
 import type { CardDatabase, CardDefinition, CardFace } from "../cards/types";
+import { leaderFace } from "./leader";
 import { opponentOf, type CardInstance, type GameState, type PlayerId } from "../state/types";
 
 type Json = Record<string, unknown>;
 
 export function leaderFaceOf(s: GameState, player: PlayerId, db: CardDatabase): CardFace | undefined {
-  const leader = s.players[player].leader;
-  const def = db.get(leader.cardId);
-  return leader.side === "front" ? def?.front : def?.back;
+  return leaderFace(s.players[player].leader, db);
 }
 
 /**
@@ -55,9 +54,22 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
       // « ... parmi vos Énergies autre que cette carte »
       return me.energy.some((e) => e.uid !== self && matchesFilter(e, c["filter"], db, s) === true);
     case "control_unison":
-    case "control_z_unison":
-      // Pas encore de Zone Unisson : jamais remplie.
-      return false;
+    case "control_z_unison": {
+      // « Si vous avez une Unisson (Z) verte en jeu (avec X marqueurs ou plus) ».
+      const filter = (c["filter"] ?? {}) as Json;
+      const { min_markers: minMarkers, ...rest } = filter;
+      return me.unison.some(
+        (u) =>
+          (c["check"] !== "control_z_unison" || db.get(u.cardId)?.type === "z_unison") &&
+          matchesFilter(u, rest, db, s) === true &&
+          (typeof minMarkers !== "number" || (u.markers ?? 0) >= minMarkers),
+      );
+    }
+    case "opponent_rest_card_count": {
+      // « Si votre adversaire a X cartes ou plus en mode Inertie » : Leader, Combat, Unisson, Énergie.
+      const cards = [opp.leader, ...opp.battle, ...opp.unison, ...opp.energy];
+      return cards.filter((x) => x.mode === "rest").length >= num("min");
+    }
     case "energy_count_with_color":
       return me.energy.filter((e) => db.get(e.cardId)?.colors.includes(c["color"] as never)).length >= num("min");
     case "any_of": {

@@ -146,6 +146,8 @@ function act(action: Action): void {
       action.type === "COMBO" ||
       action.type === "ACTIVATE" ||
       action.type === "SUCCESSOR" ||
+      action.type === "PLAY_Z" ||
+      action.type === "Z_AWAKEN" ||
       (action.type === "DECLARE_COUNTER" && !action.alt)) &&
     (selectedEnergy.size > 0 || selectedMarkers > 0)
   ) {
@@ -244,6 +246,8 @@ function anchorOf(a: Action): string | null {
     case "SUCCESSOR":
     case "OVER_REALM":
     case "DECLARE_COUNTER":
+    case "PLAY_Z":
+    case "Z_AWAKEN":
       return a.uid;
     case "CHARGE_ENERGY":
     case "DECLARE_BLOCKER":
@@ -391,13 +395,15 @@ function cardBox(c: CardView, info: RenderInfo, position?: string): string {
     <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" title="${esc(hoverText(def, c.cardId))}">
       <div class="mini-top">${colorDots(def?.colors ?? [])}<span class="mini-cost">${cost}</span></div>
       <div class="mini-name">${esc(def?.name ?? c.cardId)}</div>
-      <div class="mini-power">${power}${def?.combo ? ` <span class="mini-combo">+${def.combo.power / 1000}k</span>` : ""}</div>
+      <div class="mini-power">${power}${def?.combo ? ` <span class="mini-combo">+${def.combo.power / 1000}k</span>` : ""}${
+        c.markers !== undefined ? ` <span class="markers">◆${c.markers}</span>` : ""
+      }</div>
     </div>`;
 }
 
 function leaderBox(leader: LeaderState, info: RenderInfo): string {
   const def = db.get(leader.cardId);
-  const face = leader.side === "front" ? def?.front : def?.back;
+  const face = leader.z ? db.get(leader.z.cardId) : leader.side === "front" ? def?.front : def?.back;
   const classes = [
     "card",
     "mini",
@@ -413,7 +419,7 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
     <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" title="${esc(
       [face?.name ?? "", ...texts].join("\n\n"),
     )}">
-      <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
+      <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.z ? "Leader Z" : leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
       <div class="mini-name">${esc(face?.name ?? leader.cardId)}</div>
       <div class="mini-power">${(face?.power ?? 0) / 1000}k</div>
     </div>`;
@@ -443,11 +449,12 @@ function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string 
       <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader, info)}</div></div>
       ${zone("Vie", p.life, info, `life:${p.id}`, "life")}
       ${zone("Énergie", p.energy, info, undefined, "grow")}
+      ${zone("Unisson", p.unison, info)}
       ${p.combo.length > 0 ? zone("Combo", p.combo, info) : ""}
-      ${p.zEnergy.length > 0 ? zone("Énergie Z", p.zEnergy, info) : ""}
+      ${zone("Énergie Z", p.zEnergy, info)}
     </div>`;
   const battle = `<div class="pl-row">${zone("Zone de Combat", p.battle, info, undefined, "grow")}</div>`;
-  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}</div>`;
+  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${zone("Deck Z", p.zDeck, info)}</div>`;
   // Disposition comme sur une table : la main au bord, la Zone de Combat vers le centre.
   const rows = top ? [head, hand, field, battle] : [head, battle, field, hand];
   return `<section class="player ${deciding ? "deciding" : ""}">${rows.join("")}</section>`;
@@ -460,10 +467,10 @@ function cardDetail(view: PlayerView): string {
   let face: { name: string; colors: readonly string[]; power?: number; abilities: Record<string, unknown>[] } | undefined;
   for (const p of Object.values(view.players)) {
     if (p.leader.uid === selectedCard) {
-      def = db.get(p.leader.cardId);
-      face = p.leader.side === "front" ? def?.front : def?.back;
+      def = db.get(p.leader.z?.cardId ?? p.leader.cardId);
+      face = p.leader.z ? def : p.leader.side === "front" ? def?.front : def?.back;
     }
-    for (const z of [p.hand, p.battle, p.energy, p.combo, p.zEnergy]) {
+    for (const z of [p.hand, p.battle, p.energy, p.combo, p.zEnergy, p.zDeck, p.unison]) {
       const c = z.find((x) => isVisible(x) && x.uid === selectedCard);
       if (c && isVisible(c)) {
         def = db.get(c.cardId);

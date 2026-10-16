@@ -9,6 +9,7 @@ import { chooseAuto } from "./rules/autos";
 import { declareCounter, passCounter } from "./rules/counters";
 import { activateAbility } from "./rules/activate";
 import { activateOverRealm, activateSuccessor } from "./rules/alt-play";
+import { playFromZDeck, zAwaken } from "./rules/zdeck";
 import { answerChoice, answerOption, answerPositions } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
 import { playBattleCard } from "./rules/play";
@@ -27,9 +28,9 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   CHARGE: ["CHARGE_ENERGY"],
   // 1-5-4-1 : [Activation : Principale/Combat] (dont [Éveil]) pendant la phase principale et
   // l'étape d'Attaque du joueur actif, et pendant l'étape de Défense du joueur non actif.
-  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "SUCCESSOR", "OVER_REALM", "END_MAIN_PHASE"],
+  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "SUCCESSOR", "OVER_REALM", "PLAY_Z", "Z_AWAKEN", "END_MAIN_PHASE"],
   BLOCKER: ["DECLARE_BLOCKER"],
-  OFFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
+  OFFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "Z_AWAKEN", "END_STEP"],
   DEFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
   TAKE_DAMAGE: ["TAKE_LIFE"],
   COMBO_TO_Z: ["COMBO_TO_Z_ENERGY"],
@@ -104,10 +105,10 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       endStep(next, ctx, events);
       break;
     case "TAKE_LIFE":
-      error = takeLife(next, action, events);
+      error = takeLife(next, action, ctx, events);
       break;
     case "COMBO_TO_Z_ENERGY":
-      error = comboToZEnergy(next, action, events);
+      error = comboToZEnergy(next, action, ctx, events);
       break;
     case "AWAKEN":
       error = activateAwaken(next, action, ctx, events);
@@ -127,6 +128,12 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       break;
     case "SUCCESSOR":
       error = activateSuccessor(next, action, ctx, events);
+      break;
+    case "PLAY_Z":
+      error = playFromZDeck(next, action, ctx, events);
+      break;
+    case "Z_AWAKEN":
+      error = zAwaken(next, action, ctx, events);
       break;
     case "OVER_REALM":
       error = activateOverRealm(next, action, ctx, events);

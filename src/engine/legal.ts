@@ -17,6 +17,7 @@ import {
 import { activatableAbilities, suggestActivationPayment } from "./rules/activate";
 import { exactSubsets, overRealmOptions, successorOptions, suggestPayment } from "./rules/alt-play";
 import { awakenBlocker } from "./rules/awaken";
+import { suggestZPayment, zAwakenOptions, zPlayOptions } from "./rules/zdeck";
 import { counterOptions, suggestCounterPayment } from "./rules/counters";
 import { availableEnergySources, findPayment } from "./rules/energy";
 import { uniqueBlocks } from "./rules/keywords";
@@ -42,6 +43,10 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
   const actions: Action[] = [];
   const pending = s.pending;
 
+  // [Éveil Z] : pendant son tour (phase principale, étape d'Attaque).
+  for (const z of zAwakenOptions(s, player, ctx)) {
+    actions.push({ type: "Z_AWAKEN", player, uid: z.uid, ...suggestZPayment(s, player, z.payment, z.zCost, ctx) });
+  }
   // 9-4 : Capacités [Activation] activables maintenant (phase principale, étapes d'Attaque/Défense).
   for (const a of activatableAbilities(s, player, ctx)) {
     const payment = suggestActivationPayment(s, player, a, ctx);
@@ -83,8 +88,8 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
             },
           });
         }
-        for (const attacker of possibleAttackers(s, player)) {
-          for (const target of possibleTargets(s, player)) actions.push({ type: "ATTACK", player, attacker, target });
+        for (const attacker of possibleAttackers(s, player, ctx)) {
+          for (const target of possibleTargets(s, player, ctx)) actions.push({ type: "ATTACK", player, attacker, target });
         }
         if (!awakenBlocker(s, player, ctx)) actions.push({ type: "AWAKEN", player });
         // 22-38 : [Successeur] — quelques combinaisons exactes de cartes à sacrifier.
@@ -93,6 +98,12 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
           const payment = suggestPayment(s, player, option.energyVariants[variant]!, ctx)!;
           for (const sacrifice of exactSubsets(option.pool, option.target)) {
             actions.push({ type: "SUCCESSOR", player, uid: option.uid, sacrifice, payment, variant });
+          }
+        }
+        // 14-18 : cartes du deck Z (une action par valeur de X pour les Unissons).
+        for (const z of zPlayOptions(s, player, ctx)) {
+          for (const { x, payment } of z.payments) {
+            actions.push({ type: "PLAY_Z", player, uid: z.uid, ...suggestZPayment(s, player, payment, z.zCost, ctx), ...(x !== undefined ? { x } : {}) });
           }
         }
         // 22-15 : [Espace-temps].

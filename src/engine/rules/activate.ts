@@ -15,7 +15,10 @@ import { checkConditions, matchesFilter } from "./conditions";
 import { startResolution } from "./effects";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
 import { isNegated } from "./keywords";
+import { leaderAbilities, leaderCardId } from "./leader";
 import { payEnergy } from "./play";
+import { markerCostOf } from "./zdeck";
+import { removeMarkers } from "./zones";
 
 type Json = Record<string, unknown>;
 
@@ -68,6 +71,12 @@ export function parseCost(
       others.push(c as EffectStep);
     } else if (c["do"] === "discard" && typeof c["count"] === "number") {
       others.push(c as EffectStep);
+    } else if (c["do"] === "spirit_boost" && typeof c["markers"] === "number") {
+      // 22-43 [Boost d'Esprit X] : retirer X marqueurs de son Unisson.
+      others.push(c as EffectStep);
+    } else if (c["do"] === "remove_from_game" && c["target"] === "this") {
+      // « Retirez cette carte de la partie » (ex. Extra Z).
+      others.push(c as EffectStep);
     } else if (c["do"] === "self_restriction") {
       // « Vous ne pouvez pas ... pour toute la durée du tour » : toujours payable ; la
       // restriction elle-même n'est pas encore appliquée (signalée pendant la résolution).
@@ -85,6 +94,7 @@ export function otherCostsPayable(s: GameState, player: PlayerId, others: Effect
   for (const c of others) {
     const n = c["count"] as number;
     if (c.do === "life_to_hand" && p.life.length < n) return false;
+    if (c.do === "spirit_boost" && (p.unison[0]?.markers ?? 0) < (c["markers"] as number)) return false;
     if (c.do === "discard") {
       const ok = p.hand.filter((card) => card.uid !== self && matchesFilter(card, c["filter"], ctx.cards) === true);
       if (ok.length < n) return false;
@@ -105,7 +115,7 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
   const p = s.players[player];
   const sources: { card: { uid: string; cardId: string }; abilities: RawAbility[]; zone: "board" | "hand" | "drop" | "combo" }[] = [];
   if (!isNegated(s, p.leader.uid)) {
-    sources.push({ card: p.leader, abilities: abilitiesOf(ctx.cards, ctx.cards.get(p.leader.cardId), p.leader.side), zone: "board" });
+    sources.push({ card: { uid: p.leader.uid, cardId: leaderCardId(p.leader) }, abilities: leaderAbilities(p.leader, ctx.cards), zone: "board" });
   }
   const add = (cards: CardInstance[], zone: "board" | "hand" | "drop" | "combo") => {
     for (const c of cards) {
@@ -114,6 +124,7 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
     }
   };
   add(p.battle, "board");
+  add(p.unison, "board");
   add(p.hand, "hand");
   add(p.drop, "drop");
   add(p.combo, "combo");
@@ -130,8 +141,16 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
       const keys = usageKeys(player, card.uid, card.cardId, index);
       if (limits["once_per_turn"] && (s.turnUsage[keys.once] ?? 0) >= 1) return;
       if (typeof limits["limit"] === "number" && (s.turnUsage[keys.limit] ?? 0) >= limits["limit"]) return;
+      // 13-4 : coût de marqueurs [+X] / [-X] — seulement dans la Zone Unisson, une fois par tour et
+      // par carte pour toutes ses Capacités de marqueur, et pas plus de marqueurs qu'elle n'en a.
+      const markerCost = markerCostOf(ability);
+      if (markerCost !== undefined) {
+        const unison = p.unison.find((u) => u.uid === card.uid);
+        if (!unison || s.turnUsage[`markers:${card.uid}`]) return;
+        if (markerCost < 0 && (unison.markers ?? 0) < -markerCost) return;
+      }
       // Conditions (non gérées => non proposée).
-      if (checkConditions(s, player, ability["condition"], ctx.cards) !== true) return;
+      if (checkConditions(s, player, ability["condition"], ctx.cards, card.uid) !== true) return;
       // Coût : géré et payable (9-2-3).
       const cost = parseCost(ability["cost"]);
       if (!cost) return;
@@ -194,6 +213,18 @@ export function activateAbility(
     index: a.index,
     text: String(a.ability["text"] ?? ""),
   });
+  // 13-4-1 : coût de marqueurs (ajout immédiat, ou retrait ; à 0 l'Unisson quitte la zone, 21-9).
+  const markerCost = markerCostOf(a.ability);
+  if (markerCost !== undefined) {
+    s.turnUsage[`markers:${a.uid}`] = 1;
+    const unison = s.players[action.player].unison.find((u) => u.uid === a.uid)!;
+    if (markerCost > 0) {
+      unison.markers = (unison.markers ?? 0) + markerCost;
+      events.push({ type: "MARKERS_CHANGED", player: action.player, uid: unison.uid, cardId: unison.cardId, markers: unison.markers });
+    } else if (markerCost < 0) {
+      removeMarkers(s, ctx, action.player, unison, -markerCost, events);
+    }
+  }
   const limits = (a.ability["limits"] ?? {}) as Json;
   const keys = usageKeys(action.player, a.uid, a.cardId, a.index);
   if (limits["once_per_turn"]) s.turnUsage[keys.once] = (s.turnUsage[keys.once] ?? 0) + 1;

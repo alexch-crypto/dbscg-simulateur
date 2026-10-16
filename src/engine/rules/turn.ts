@@ -34,7 +34,7 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   const p = s.players[player];
   const locked = new Set(s.effects.filter((e) => e.kind === "lock_active").map((e) => e.uid));
   if (!locked.has(p.leader.uid)) p.leader.mode = "active";
-  for (const c of [...p.battle, ...p.energy]) if (!locked.has(c.uid)) c.mode = "active";
+  for (const c of [...p.battle, ...p.energy, ...p.unison]) if (!locked.has(c.uid)) c.mode = "active";
   events.push({ type: "CARDS_READIED", player });
 
   // 7-2-8 : point de contrôle.

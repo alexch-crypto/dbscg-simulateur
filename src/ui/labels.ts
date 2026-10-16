@@ -26,7 +26,7 @@ const isVisible = (c: CardView): c is VisibleCard => "uid" in c;
 /** Retrouve une carte visible (par uid) dans la vue, toutes zones publiques confondues. */
 function findVisible(view: PlayerView, uid: string): VisibleCard | undefined {
   for (const p of Object.values(view.players)) {
-    for (const zone of [p.hand, p.life, p.energy, p.battle, p.combo, p.drop, p.zEnergy, p.warp]) {
+    for (const zone of [p.hand, p.life, p.energy, p.battle, p.combo, p.drop, p.zEnergy, p.warp, p.zDeck, p.unison, p.removed]) {
       const found = zone.find((c) => isVisible(c) && c.uid === uid);
       if (found && isVisible(found)) return found;
     }
@@ -43,7 +43,7 @@ export function nameOf(view: PlayerView, db: CardDatabase, uid: string): string 
   for (const p of Object.values(view.players)) {
     if (p.leader.uid === uid) {
       const def = db.get(p.leader.cardId);
-      const face = p.leader.side === "front" ? def?.front : def?.back;
+      const face = p.leader.z ? db.get(p.leader.z.cardId) : p.leader.side === "front" ? def?.front : def?.back;
       return `Leader ${face?.name ?? p.leader.cardId} (${p.id})`;
     }
   }
@@ -118,6 +118,19 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       const card = findVisible(view, a.uid);
       const names = a.sacrifice.map((u) => nameOf(view, db, u)).join(" + ");
       return `Successeur : jouer ${card ? cardName(db, card.cardId) : a.uid} en sacrifiant ${names}${paymentText(view, db, a.payment.energy, a.payment.markers)}`;
+    }
+    case "PLAY_Z": {
+      const card = findVisible(view, a.uid);
+      return `Jouer depuis le deck Z : ${card ? cardName(db, card.cardId) : a.uid}${a.x !== undefined ? ` (X = ${a.x}, ${a.x} marqueur(s))` : ""}${paymentText(
+        view,
+        db,
+        a.payment.energy,
+        a.payment.markers,
+      )} + ${a.zEnergy.length} Énergie(s) Z`;
+    }
+    case "Z_AWAKEN": {
+      const card = findVisible(view, a.uid);
+      return `Éveil Z : ${card ? cardName(db, card.cardId) : a.uid}${paymentText(view, db, a.payment.energy, a.payment.markers)} + ${a.zEnergy.length} Énergie(s) Z`;
     }
     case "OVER_REALM": {
       const card = findVisible(view, a.uid);
@@ -245,6 +258,18 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `${e.player} active le [Contre] de ${cardName(db, e.cardId)} !`;
     case "COUNTER_RESOLVING":
       return `Résolution du [Contre] de ${cardName(db, e.cardId)}.`;
+    case "MARKERS_CHANGED":
+      return `${cardName(db, e.cardId)} (${e.player}) : ${e.markers} marqueur(s).`;
+    case "Z_PLAY_DECLARED":
+      return `${e.player} déclare jouer ${cardName(db, e.cardId)} depuis son deck Z.`;
+    case "UNISON_PLAYED":
+      return `${e.player} joue l'Unisson ${cardName(db, e.cardId)} avec ${e.markers} marqueur(s).`;
+    case "EXTRA_Z_PLACED":
+      return `${e.player} place l'Extra Z ${cardName(db, e.cardId)} dans sa Zone de Combat.`;
+    case "LEADER_Z":
+      return `${e.player} active l'Éveil Z : ${cardName(db, e.cardId)} !`;
+    case "Z_ENERGY_PAID":
+      return `${e.player} place ${e.cardIds.length} Énergie(s) Z dans sa Dispersion.`;
     case "COST_MODIFIED":
       return `Coût d'énergie de ${e.uids.map(n).join(", ")} : ${e.amount > 0 ? "+" : ""}${e.amount} pour le tour.`;
     case "SUCCESSOR_DISCOUNT":

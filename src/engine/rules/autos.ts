@@ -19,7 +19,9 @@ import { checkDefeat } from "./defeat";
 import { afterCounterLink } from "./counters";
 import { resumeResolution, startResolution } from "./effects";
 import { isNegated } from "./keywords";
+import { leaderAbilities, leaderCardId } from "./leader";
 import { finishPlay } from "./play";
+import { finishZPlay } from "./zdeck";
 
 // ---------------------------------------------------------------------------
 // Déclencheurs
@@ -34,7 +36,9 @@ export type Trigger =
   /** Une carte quitte la Zone de Combat (mise KO en combat ou par une Capacité). */
   | { event: "leaves_battle"; card: CardInstance }
   /** 5-7 : une carte est utilisée pour une Combo. */
-  | { event: "used_in_combo"; card: CardInstance };
+  | { event: "used_in_combo"; card: CardInstance }
+  /** 8-5-9 : fin du combat pendant lequel cette carte a été attaquée. */
+  | { event: "battle_end_attacked"; ref: CardRef };
 
 /** Événements du fichier de cartes qui correspondent à chaque déclencheur (pour « cette carte »). */
 const SELF_EVENTS: Record<Trigger["event"], string[]> = {
@@ -43,6 +47,7 @@ const SELF_EVENTS: Record<Trigger["event"], string[]> = {
   attacked: ["attacked"],
   leaves_battle: ["leaves_battle_area_by_skill_or_ko"],
   used_in_combo: ["used_in_combo"],
+  battle_end_attacked: ["battle_end"],
 };
 
 /** Carte (uid, numéro, maître, Capacités actuelles) désignée par une référence en jeu. */
@@ -51,10 +56,9 @@ function sourceOf(s: GameState, ref: CardRef, ctx: GameContext) {
   // 9-1 : une carte dont les Capacités sont annulées ne déclenche rien.
   if (isNegated(s, ref.uid)) return null;
   if (p.leader.uid === ref.uid) {
-    const def = ctx.cards.get(p.leader.cardId);
-    return { uid: ref.uid, cardId: p.leader.cardId, player: ref.player, abilities: abilitiesOf(ctx.cards, def, p.leader.side) };
+    return { uid: ref.uid, cardId: leaderCardId(p.leader), player: ref.player, abilities: leaderAbilities(p.leader, ctx.cards) };
   }
-  const card = p.battle.find((c) => c.uid === ref.uid);
+  const card = [...p.battle, ...p.unison].find((c) => c.uid === ref.uid);
   if (!card) return null;
   return { uid: card.uid, cardId: card.cardId, player: ref.player, abilities: abilitiesOf(ctx.cards, ctx.cards.get(card.cardId)) };
 }
@@ -97,7 +101,8 @@ export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, 
     source.abilities.forEach((ability, index) => {
       if (ability["kind"] !== "auto") return;
       const t = ability["trigger"] as Record<string, unknown> | undefined;
-      if (!t || t["who"] !== "this") return;
+      // « Cette carte », ou « à la fin du combat pendant lequel cette carte a été attaquée ».
+      if (!t || (t["who"] !== "this" && t["condition"] !== "this_was_attacked")) return;
       // « Quand cette carte est jouée via [Successeur] / avec [Espace-temps] ».
       const viaMatch = t["event"] === "played_via" && trigger.event === "played" && trigger.via !== undefined && t["via"] === trigger.via;
       if (!viaMatch && !SELF_EVENTS[trigger.event].includes(t["event"] as string)) return;
@@ -109,7 +114,10 @@ export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, 
   if (trigger.event === "played") {
     const player = trigger.card.owner;
     const p = s.players[player];
-    const refs: CardRef[] = [{ player, uid: p.leader.uid }, ...p.battle.filter((c) => c.uid !== trigger.card.uid).map((c) => ({ player, uid: c.uid }))];
+    const refs: CardRef[] = [
+      { player, uid: p.leader.uid },
+      ...[...p.battle, ...p.unison].filter((c) => c.uid !== trigger.card.uid).map((c) => ({ player, uid: c.uid })),
+    ];
     for (const ref of refs) {
       const other = sourceOf(s, ref, ctx);
       other?.abilities.forEach((ability, index) => {
@@ -221,10 +229,13 @@ export function continueWith(s: GameState, ctx: GameContext, then: Continuation,
       startBlockerStep(s, ctx, events);
       return;
     case "battle_end_step":
-      battleEndStep(s, events);
+      battleEndStep(s, ctx, events);
       return;
     case "finish_play":
       finishPlay(s, ctx, then.player, then.uid, events);
+      return;
+    case "finish_z_play":
+      finishZPlay(s, ctx, then.player, then.uid, then.markers, events);
       return;
     case "run_resolution":
       resumeResolution(s, ctx, events);

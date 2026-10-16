@@ -11,6 +11,9 @@ import { abilitiesOf } from "../cards/abilities";
 import type { GameContext } from "../protocol";
 import type { CardInstance, GameState, PlayerId } from "../state/types";
 import { checkConditions, matchesFilter } from "./conditions";
+import type { CostModifier } from "./energy";
+import type { Color } from "../cards/types";
+import { leaderCardId } from "./leader";
 
 type Json = Record<string, unknown>;
 
@@ -55,6 +58,30 @@ export function handCostChange(s: GameState, player: PlayerId, card: CardInstanc
   return change;
 }
 
+/**
+ * Modifications du coût d'énergie d'une carte dans une zone donnée par ses propres [Permanent] :
+ * nombre (coût total seulement) ou orbes (« réduisez de (jaune)(jaune)(jaune) », 20-21).
+ */
+export function zoneCostModifiers(
+  s: GameState,
+  player: PlayerId,
+  card: CardInstance,
+  zone: string,
+  ctx: GameContext,
+): CostModifier[] {
+  const mods: CostModifier[] = [];
+  for (const e of activePermanentEffects(s, player, card, ctx)) {
+    if (e["do"] !== "modify_energy_cost" || e["target"] !== "this" || e["zone"] !== zone) continue;
+    const amount = e["amount"];
+    if (typeof amount === "number") mods.push({ kind: "total", amount });
+    else if (amount === "-count" && typeof e["count"] === "object") mods.push({ kind: "total", amount: -countCards(s, player, e["count"] as Json, ctx) });
+    else if (typeof amount === "object" && amount && typeof (amount as Json)["specified"] === "object") {
+      mods.push({ kind: "colors", colors: (amount as Json)["specified"] as Partial<Record<Color, number>> });
+    }
+  }
+  return mods;
+}
+
 /** Modification du coût de Combo d'une carte de la main par ses propres [Permanent]. */
 export function comboCostChange(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext): number {
   let change = 0;
@@ -79,7 +106,7 @@ export function negatesOwnKeyword(s: GameState, player: PlayerId, card: CardInst
  */
 export function successorOpponentCardsFilter(s: GameState, player: PlayerId, ctx: GameContext): Json | null {
   const leader = s.players[player].leader;
-  for (const e of activePermanentEffects(s, player, leader, ctx, leader.side)) {
+  for (const e of activePermanentEffects(s, player, { uid: leader.uid, cardId: leaderCardId(leader) }, ctx, leader.z ? undefined : leader.side)) {
     if (e["do"] === "successor_may_use_opponent_cards") return (e["applies_to"] ?? {}) as Json;
   }
   return null;
