@@ -72,6 +72,8 @@ let logHidden = (() => {
 
 /** Carte sélectionnée (ses actions sont affichées dans le panneau). */
 let selectedCard: string | null = null;
+/** Deck Z ouvert (son contenu est affiché dans le panneau de droite), ou aucun. */
+let openZDeck: PlayerId | null = null;
 /** Cartes / positions cochées pour une décision « choisissez X cartes ». */
 const picked = new Set<string>();
 /** Paiement personnalisé : Énergies sélectionnées en cliquant dessus, et marqueurs. */
@@ -454,10 +456,36 @@ function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string 
       ${zone("Énergie Z", p.zEnergy, info)}
     </div>`;
   const battle = `<div class="pl-row">${zone("Zone de Combat", p.battle, info, undefined, "grow")}</div>`;
-  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${zone("Deck Z", p.zDeck, info)}</div>`;
+  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${zPile(p, info)}</div>`;
   // Disposition comme sur une table : la main au bord, la Zone de Combat vers le centre.
   const rows = top ? [head, hand, field, battle] : [head, battle, field, hand];
   return `<section class="player ${deciding ? "deciding" : ""}">${rows.join("")}</section>`;
+}
+
+/** Deck Z : une pile d'une seule carte face cachée ; un clic l'ouvre dans le panneau de droite. */
+function zPile(p: PlayerZonesView, info: RenderInfo): string {
+  const hasAction = p.zDeck.some((c) => isVisible(c) && info.actionable.has(c.uid));
+  const classes = ["card", "mini", "zpile", hasAction ? "actionable" : "", openZDeck === p.id ? "selected" : ""];
+  return `<div class="zone"><div class="zone-title">Deck Z</div><div class="cards">
+    <div class="${classes.join(" ")}" data-zpile="${p.id}" title="Cliquer pour ouvrir / fermer le deck Z">
+      <div class="mini-name">Deck Z</div><div class="mini-power">${p.zDeck.length} carte(s)</div>
+      <div class="mini-combo">${openZDeck === p.id ? "fermer" : "ouvrir"}</div>
+    </div></div></div>`;
+}
+
+/** Contenu du deck Z ouvert (cartes visibles seulement pour leur propriétaire). */
+function zDeckPanel(view: PlayerView, info: RenderInfo): string {
+  if (!openZDeck) return "";
+  const p = view.players[openZDeck];
+  const visible = p.zDeck.filter(isVisible);
+  const content =
+    visible.length > 0
+      ? visible.map((c) => cardBox(c, info)).join("")
+      : p.zDeck.length > 0
+        ? `<span class="hint">Cartes cachées (deck Z adverse).</span>`
+        : `<span class="empty">vide</span>`;
+  return `<div class="detail"><div class="zone-title">Deck Z de ${p.id} (${p.zDeck.length}) <button data-zpile="${p.id}">Fermer</button></div>
+    <div class="cards zdeck-open">${content}</div></div>`;
 }
 
 /** Fiche détaillée de la carte sélectionnée (avec le texte de ses capacités). */
@@ -612,7 +640,7 @@ function render(): void {
         ${playerArea(view.players[bottom], info, false)}
       </div>
       <aside>
-        <div class="actions">${cardDetail(view)}${actionsPanel(view, info)}</div>
+        <div class="actions">${zDeckPanel(view, info)}${cardDetail(view)}${actionsPanel(view, info)}</div>
         <div class="log ${logHidden ? "collapsed" : ""}">
           <h3>Journal <button data-toggle-log>${logHidden ? "Afficher" : "Masquer"}</button></h3>
           ${
@@ -640,9 +668,14 @@ function render(): void {
 app.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log]",
+    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log],[data-zpile]",
   );
   if (!el) return;
+  if (el.dataset["zpile"] !== undefined) {
+    const owner = el.dataset["zpile"] as PlayerId;
+    openZDeck = openZDeck === owner ? null : owner;
+    return render();
+  }
   if (el.dataset["toggleLog"] !== undefined) {
     logHidden = !logHidden;
     try {

@@ -110,3 +110,8 @@ button.danger { color: var(--error); }
 .pass-screen button { font-size: 16px; padding: 10px 20px; }
 .setting { display: block; text-align: left; margin: 12px 0; }
 .setting .hint { display: block; margin-left: 24px; }
+
+/* Deck Z : pile face cachée, et contenu ouvert dans le panneau. */
+.card.mini.zpile { background: #3b3b4a; color: #fff; cursor: pointer; }
+.card.mini.zpile .mini-combo { color: #cfcfe0; }
+.cards.zdeck-open { flex-wrap: wrap; gap: 4px; margin-top: 4px; }
