@@ -23,12 +23,20 @@ h3 { margin: 8px 0 4px; font-size: 13px; color: var(--muted); text-transform: up
 .zone-title { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 .counters { display: flex; flex-direction: column; gap: 2px; justify-content: center; }
 .cards { display: flex; flex-wrap: wrap; gap: 6px; }
-.card { width: 150px; min-height: 92px; border: 1px solid var(--border); border-radius: 6px; padding: 6px; background: #fff; font-size: 12px; }
-.card.leader { width: 190px; border-width: 2px; }
+.card { width: 124px; min-height: 76px; border: 1px solid var(--border); border-radius: 6px; padding: 5px; background: #fff; font-size: 11px; }
+.card.leader { width: 150px; border-width: 2px; }
 .card.rest { background: var(--rest); transform: rotate(4deg); border-style: dashed; }
-.card.selectable { cursor: pointer; }
-.card.selectable:hover { border-color: var(--accent); }
+.card[data-slot] { cursor: pointer; }
+.card.actionable { border: 2px solid #f0a020; box-shadow: 0 0 0 2px #f0a02033; }
+.card.pickable { border: 2px solid #2a9d4b; box-shadow: 0 0 0 2px #2a9d4b33; }
+.card.picked { outline: 3px solid #2a9d4b; background: #e8f7ec; }
 .card.selected { outline: 3px solid var(--accent); }
+.card.paying { outline: 3px dashed var(--accent); }
+.player.deciding { border-color: #f0a020; border-width: 2px; }
+.turn-badge { font-size: 12px; background: #f0a020; color: #fff; border-radius: 10px; padding: 2px 8px; vertical-align: middle; }
+button.primary { font-weight: 600; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.log .warn { color: #a05a00; }
 .hidden-card { width: 40px; min-height: 56px; display: flex; align-items: center; justify-content: center; background: #3b3b4a; color: #fff; font-weight: bold; }
 .card-name { font-weight: 600; margin-bottom: 3px; }
 .card-line { color: var(--muted); }
@@ -42,7 +50,10 @@ h3 { margin: 8px 0 4px; font-size: 13px; color: var(--muted); text-transform: up
 .drop { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .battle { background: #fff4e5; border: 1px solid #f0b46b; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
 .result { background: #e8f5e9; border: 1px solid #66bb6a; padding: 10px 16px; font-size: 16px; }
-aside { display: flex; flex-direction: column; gap: 12px; }
+aside { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 8px; align-self: start; max-height: calc(100vh - 16px); }
+.player { padding: 8px; margin-bottom: 8px; }
+.zone { margin: 4px 0; }
+.row { align-items: flex-start; }
 .actions, .log { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
 .actions button { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 6px 8px; }
 .group { margin-bottom: 6px; }
@@ -57,7 +68,8 @@ button.danger { color: var(--error); }
 .header-buttons button, .file-button { padding: 4px 8px; }
 .file-button { font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 .file-button:hover { border-color: var(--accent); }
-.log { max-height: 420px; overflow-y: auto; font-size: 12px; }
+.actions { overflow-y: auto; max-height: 55vh; }
+.log { flex: 1; min-height: 120px; overflow-y: auto; font-size: 12px; }
 .log div { padding: 2px 0; border-bottom: 1px solid #eee; }
 .pass-screen { max-width: 520px; margin: 15vh auto; text-align: center; background: var(--panel); padding: 32px; border-radius: 12px; border: 1px solid var(--border); }
 .pass-screen button { font-size: 16px; padding: 10px 20px; }

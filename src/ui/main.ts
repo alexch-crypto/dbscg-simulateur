@@ -1,8 +1,16 @@
-// Interface de test : deux joueurs sur le même écran (« hot seat »).
+// Interface de test dans le navigateur.
 //
-// Cette page joue le rôle de l'« hôte » : elle garde l'état complet de la partie et appelle
-// le moteur. Mais elle n'AFFICHE que la vue du joueur assis devant l'écran (getPlayerView),
-// exactement comme le fera plus tard le mode en ligne. Aucune règle du jeu n'est codée ici.
+// Deux modes :
+//  - Solo (par défaut) : vous jouez les deux côtés. P1 en bas, P2 en haut, les deux mains
+//    visibles, pas d'écran « passez l'ordinateur ».
+//  - Deux joueurs sur le même écran : chacun ne voit que son jeu, avec un écran de passage.
+//
+// On joue en CLIQUANT SUR LES CARTES : les cartes qui ont une action possible sont surlignées ;
+// un clic affiche leurs actions dans le panneau de droite. Pour choisir des cartes (cartes de
+// Vie, cibles d'un effet...), on clique dessus puis on valide.
+//
+// Cette page joue le rôle de l'« hôte » : elle garde l'état complet et appelle le moteur, mais
+// n'affiche que des vues de joueur (getPlayerView). Aucune règle du jeu n'est codée ici.
 
 import freezerFile from "../../cards/freezer.json";
 import {
@@ -15,12 +23,12 @@ import {
   parseCardFile,
   replayGame,
   type Action,
-  type CounterPrompt,
-  type GameRecord,
   type CardDefinition,
   type CardView,
+  type CounterPrompt,
   type GameContext,
   type GameEvent,
+  type GameRecord,
   type GameState,
   type LeaderState,
   type PlayerId,
@@ -39,16 +47,25 @@ const freezer = parseCardFile(freezerFile);
 const db = buildCardDatabase([freezer.cards]);
 const ctx: GameContext = { cards: db };
 
-let state: GameState;
+type Mode = "solo" | "hotseat";
+
+let state: GameState | null = null;
 let seed = 0;
 /** Enregistrement de la partie (graine, decks, coups joués) pour l'export. */
 let record: GameRecord;
 let log: string[] = [];
-/** Joueur actuellement devant l'écran (dont on affiche la vue). */
+let mode: Mode = "solo";
+/** Réglage des fenêtres de contre de chaque joueur. */
+const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "only_if_playable", P2: "only_if_playable" };
+/** Mode deux joueurs : joueur devant l'écran, et écran de passage affiché ou non. */
 let screenOwner: PlayerId = "P1";
-/** false = écran « passez l'ordinateur » affiché, rien de secret n'est visible. */
 let revealed = false;
 let errorMessage = "";
+
+/** Carte sélectionnée (ses actions sont affichées dans le panneau). */
+let selectedCard: string | null = null;
+/** Cartes / positions cochées pour une décision « choisissez X cartes ». */
+const picked = new Set<string>();
 /** Paiement personnalisé : Énergies sélectionnées en cliquant dessus, et marqueurs. */
 const selectedEnergy = new Set<string>();
 let selectedMarkers = 0;
@@ -57,25 +74,36 @@ let currentActions: Action[] = [];
 
 const app = document.getElementById("app")!;
 
-/** Réglage des fenêtres de contre choisi par chaque joueur sur l'écran de début de partie. */
-const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "always", P2: "always" };
+// ---------------------------------------------------------------------------
+// Partie : création, coups, export / import
+// ---------------------------------------------------------------------------
 
-/** Écran de début de partie : réglages de chaque joueur. */
 function showSetup(): void {
-  const option = (p: PlayerId) => `
+  const prompt = (p: PlayerId) => `
     <label class="setting">
       <input type="checkbox" data-prompt="${p}" ${counterPrompt[p] === "always" ? "checked" : ""}>
       <b>${p}</b> : toujours me demander si je veux contrer
-      <span class="hint">(décoché : la partie ne s'arrête que si j'ai un contre jouable — plus rapide,
-      mais en ligne l'adversaire pourrait deviner que j'ai un contre en main)</span>
+      <span class="hint">(décoché : la partie ne s'arrête que si ${p} a un contre jouable)</span>
     </label>`;
   app.innerHTML = `
     <div class="pass-screen">
       <h1>Nouvelle partie</h1>
-      <p>Freezer contre Freezer. Réglage des fenêtres de contre :</p>
-      ${option("P1")}${option("P2")}
+      <p>Freezer contre Freezer.</p>
+      <label class="setting"><input type="radio" name="mode" data-mode="solo" ${mode === "solo" ? "checked" : ""}>
+        <b>Solo</b> — je joue les deux côtés (les deux mains visibles, pas d'écran de passage)</label>
+      <label class="setting"><input type="radio" name="mode" data-mode="hotseat" ${mode === "hotseat" ? "checked" : ""}>
+        <b>Deux joueurs sur le même écran</b> — chacun ne voit que son jeu</label>
+      <h3>Fenêtres de contre</h3>
+      ${prompt("P1")}${prompt("P2")}
       <button data-start>Commencer la partie</button>
     </div>`;
+}
+
+function resetSelection(): void {
+  selectedCard = null;
+  picked.clear();
+  selectedEnergy.clear();
+  selectedMarkers = 0;
 }
 
 function newGame(): void {
@@ -89,25 +117,21 @@ function newGame(): void {
   state = result.state;
   record = newRecord(seed, decks, { ...counterPrompt });
   log = [];
-  addToLog(result.events, "P1");
+  addToLog(result.events);
   errorMessage = "";
-  clearSelection();
+  resetSelection();
   screenOwner = state.pending!.player;
   revealed = false;
   render();
 }
 
-function addToLog(events: GameEvent[], viewer: PlayerId): void {
-  const view = getPlayerView(state, viewer);
+function addToLog(events: GameEvent[]): void {
+  const view = currentView();
   for (const e of events) log.push(describeEvent(e, view, db));
 }
 
-function clearSelection(): void {
-  selectedEnergy.clear();
-  selectedMarkers = 0;
-}
-
 function act(action: Action): void {
+  if (!state) return;
   // Paiement personnalisé : remplace le paiement suggéré par la sélection du joueur.
   if (
     (action.type === "PLAY_CARD" ||
@@ -128,18 +152,16 @@ function act(action: Action): void {
   state = r.state;
   record.actions.push(action);
   errorMessage = "";
-  clearSelection();
-  addToLog(r.events, action.player);
-  // Si c'est maintenant à l'autre joueur de décider, on cache l'écran.
+  resetSelection();
+  addToLog(r.events);
   const next = state.pending?.player;
-  if (next && next !== screenOwner) {
+  if (mode === "hotseat" && next && next !== screenOwner) {
     screenOwner = next;
     revealed = false;
   }
   render();
 }
 
-/** Télécharge l'enregistrement de la partie (fichier JSON). */
 function exportGame(): void {
   const blob = new Blob([JSON.stringify(record, null, 1)], { type: "application/json" });
   const link = document.createElement("a");
@@ -149,7 +171,6 @@ function exportGame(): void {
   URL.revokeObjectURL(link.href);
 }
 
-/** Charge un fichier de partie et rejoue tous ses coups. */
 async function importGame(file: File): Promise<void> {
   let data: unknown;
   try {
@@ -170,14 +191,117 @@ async function importGame(file: File): Promise<void> {
   seed = loaded.seed;
   record = { ...loaded, actions: [...loaded.actions] };
   log = [];
-  addToLog(replay.events, "P1");
+  addToLog(replay.events);
   log.push(`(Partie chargée : ${loaded.actions.length} coups rejoués.)`);
   errorMessage = "";
-  clearSelection();
+  resetSelection();
   screenOwner = state.pending?.player ?? "P1";
   revealed = false;
   render();
 }
+
+// ---------------------------------------------------------------------------
+// Vues
+// ---------------------------------------------------------------------------
+
+/** Joueur qui doit décider maintenant (celui dont on affiche les actions). */
+const decider = (): PlayerId => state?.pending?.player ?? state?.turnPlayer ?? "P1";
+
+/**
+ * Vue affichée. En Solo : la main et les choix de chaque joueur sont visibles (vue du joueur
+ * qui décide, avec la main de l'autre prise dans sa propre vue). En mode deux joueurs : la vue
+ * du joueur devant l'écran seulement.
+ */
+function currentView(): PlayerView {
+  const s = state!;
+  if (mode === "hotseat") return getPlayerView(s, screenOwner);
+  const main = getPlayerView(s, decider());
+  const other = decider() === "P1" ? "P2" : "P1";
+  return { ...main, players: { ...main.players, [other]: getPlayerView(s, other).players[other] } };
+}
+
+/** Joueur affiché en bas de l'écran. */
+const bottomPlayer = (): PlayerId => (mode === "solo" ? "P1" : screenOwner);
+
+// ---------------------------------------------------------------------------
+// Actions rattachées aux cartes
+// ---------------------------------------------------------------------------
+
+/** Carte à laquelle une action est rattachée (on clique sur cette carte pour la voir). */
+function anchorOf(a: Action): string | null {
+  switch (a.type) {
+    case "PLAY_CARD":
+    case "COMBO":
+    case "ACTIVATE":
+    case "SUCCESSOR":
+    case "OVER_REALM":
+    case "DECLARE_COUNTER":
+      return a.uid;
+    case "CHARGE_ENERGY":
+    case "DECLARE_BLOCKER":
+    case "COMBO_TO_Z_ENERGY":
+      return a.uid;
+    case "ATTACK":
+      return a.attacker;
+    case "AWAKEN":
+      return `${a.player}-L`;
+    default:
+      return null;
+  }
+}
+
+/** Décisions où l'on choisit des cartes en cliquant dessus, puis on valide. */
+const PICK_DECISIONS = ["CHOOSE_CARDS", "TAKE_DAMAGE", "CHOOSE_LIFE", "CHOOSE_BLIND"];
+
+/** Ce qui peut être coché pour la décision en cours : identifiant de carte ou de position. */
+function pickables(view: PlayerView): Set<string> {
+  const p = view.pending;
+  if (!p) return new Set();
+  switch (p.type) {
+    case "CHOOSE_CARDS":
+      return new Set(p.options);
+    case "TAKE_DAMAGE":
+    case "CHOOSE_LIFE":
+      return new Set(view.players[p.player].life.map((_, i) => `life:${p.player}:${i}`));
+    case "CHOOSE_BLIND":
+      return new Set(view.players[p.owner].hand.map((_, i) => `hand:${p.owner}:${i}`));
+    default:
+      return new Set();
+  }
+}
+
+/** Bornes du nombre de choix pour la décision en cours. */
+function pickBounds(view: PlayerView): { min: number; max: number } {
+  const p = view.pending!;
+  if (p.type === "TAKE_DAMAGE") {
+    const n = Math.min(p.amount, view.players[p.player].life.length);
+    return { min: n, max: n };
+  }
+  if (p.type === "CHOOSE_CARDS" || p.type === "CHOOSE_LIFE" || p.type === "CHOOSE_BLIND") return { min: p.min, max: p.max };
+  return { min: 0, max: 0 };
+}
+
+/** Transforme les cases cochées en coup du moteur. */
+function pickedAction(view: PlayerView): Action | null {
+  const p = view.pending!;
+  const positions = () => [...picked].map((id) => Number(id.split(":")[2]));
+  switch (p.type) {
+    case "CHOOSE_CARDS":
+      return { type: "CHOOSE_CARDS", player: p.player, uids: [...picked] };
+    case "TAKE_DAMAGE":
+      return { type: "TAKE_LIFE", player: p.player, indices: positions() };
+    case "CHOOSE_LIFE":
+      return { type: "CHOOSE_LIFE", player: p.player, indices: positions() };
+    case "CHOOSE_BLIND":
+      return { type: "CHOOSE_BLIND", player: p.player, indices: positions() };
+    default:
+      return null;
+  }
+}
+
+/** Le joueur qui décide peut-il choisir ses Énergies pour payer ? */
+const paymentPossible = () =>
+  currentActions.some((a) => ["PLAY_CARD", "COMBO", "ACTIVATE", "SUCCESSOR", "DECLARE_COUNTER"].includes(a.type));
 
 // ---------------------------------------------------------------------------
 // Affichage
@@ -188,7 +312,6 @@ const esc = (text: string): string =>
 
 const isVisible = (c: CardView): c is VisibleCard => "uid" in c;
 
-/** Mots-clés gérés par le moteur, affichés sur les cartes. */
 const KEYWORD_NAMES: Record<string, string> = {
   blocker: "Bloqueur",
   critical: "Coup Critique",
@@ -201,81 +324,119 @@ const KEYWORD_NAMES: Record<string, string> = {
   unique: "Unique",
   ultimate: "Ultimate",
   super_combo: "Super Combo",
+  deflect: "Déflexion",
+  successor: "Successeur",
+  over_realm: "Espace-temps",
 };
 
-function colorDots(colors: readonly string[]): string {
-  return colors.map((c) => `<span class="dot dot-${c}" title="${COLOR_NAMES[c] ?? c}"></span>`).join("");
-}
+const colorDots = (colors: readonly string[]) =>
+  colors.map((c) => `<span class="dot dot-${c}" title="${COLOR_NAMES[c] ?? c}"></span>`).join("");
 
 function costText(def: CardDefinition): string {
   if (!def.cost) return "";
   const orbs = Object.entries(def.cost.specified)
     .map(([c, n]) => `${n} ${COLOR_NAMES[c] ?? c}`)
     .join(" + ");
-  return `Coût ${def.cost.total}${orbs ? ` (dont ${orbs})` : ""}`;
+  return `Coût ${def.cost.total}${orbs ? ` (${orbs})` : ""}`;
 }
 
-function cardBox(c: CardView, options: { selectable?: boolean } = {}): string {
-  if (!isVisible(c)) return `<div class="card hidden-card">?</div>`;
+interface RenderInfo {
+  view: PlayerView;
+  actionable: Set<string>;
+  pickable: Set<string>;
+}
+
+/**
+ * Une carte. `position` (ex. « life:P1:3 ») sert quand on choisit des cartes par leur place
+ * (Vie, main adverse à l'aveugle) ; sinon la carte est identifiée par son uid.
+ */
+function cardBox(c: CardView, info: RenderInfo, position?: string): string {
+  if (!isVisible(c)) {
+    // Carte cachée (main adverse, Vie) : elle peut quand même être cochée par position.
+    const id = position ?? "";
+    const classes = ["card", "hidden-card", info.pickable.has(id) ? "pickable" : "", picked.has(id) ? "picked" : ""];
+    return `<div class="${classes.join(" ")}" ${id ? `data-slot="${esc(id)}"` : ""}>?</div>`;
+  }
   const def = db.get(c.cardId);
-  const classes = ["card", c.mode === "rest" ? "rest" : ""];
-  const selected = selectedEnergy.has(c.uid);
-  if (options.selectable) classes.push("selectable");
-  if (selected) classes.push("selected");
+  const id = position && info.pickable.has(position) ? position : c.uid;
+  const classes = [
+    "card",
+    c.mode === "rest" ? "rest" : "",
+    info.actionable.has(c.uid) ? "actionable" : "",
+    info.pickable.has(id) ? "pickable" : "",
+    picked.has(id) ? "picked" : "",
+    selectedCard === c.uid ? "selected" : "",
+    selectedEnergy.has(c.uid) ? "paying" : "",
+  ];
   const keywords = def?.keywords.map((k) => KEYWORD_NAMES[k.id]).filter((k): k is string => k !== undefined) ?? [];
   return `
-    <div class="${classes.join(" ")}" ${options.selectable ? `data-energy="${esc(c.uid)}"` : ""} title="${esc(c.cardId)}">
+    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" title="${esc(c.cardId)}">
       <div class="card-name">${colorDots(def?.colors ?? [])} ${esc(def?.name ?? c.cardId)}</div>
       ${def ? `<div class="card-line">${esc(costText(def))}</div>` : ""}
-      ${def?.power !== undefined ? `<div class="card-line"><b>${def.power}</b> de puissance</div>` : ""}
-      ${def?.combo ? `<div class="card-line">Combo +${def.combo.power} (coût ${def.combo.cost})</div>` : ""}
+      ${def?.power !== undefined ? `<div class="card-line"><b>${def.power}</b></div>` : ""}
+      ${def?.combo ? `<div class="card-line">Combo +${def.combo.power} (${def.combo.cost})</div>` : ""}
       ${keywords.length ? `<div class="card-line kw">${keywords.join(", ")}</div>` : ""}
       ${def && def.type !== "battle" ? `<div class="card-line kw">${esc(def.type)}</div>` : ""}
-      <div class="card-mode">${c.mode === "rest" ? "Inertie" : "Action"}${selected ? " · sélectionnée" : ""}</div>
+      ${selectedEnergy.has(c.uid) ? `<div class="card-mode">payée</div>` : ""}
     </div>`;
 }
 
-function leaderBox(leader: LeaderState): string {
+function leaderBox(leader: LeaderState, info: RenderInfo): string {
   const def = db.get(leader.cardId);
   const face = leader.side === "front" ? def?.front : def?.back;
+  const classes = [
+    "card",
+    "leader",
+    leader.mode === "rest" ? "rest" : "",
+    info.actionable.has(leader.uid) ? "actionable" : "",
+    info.pickable.has(leader.uid) ? "pickable" : "",
+    picked.has(leader.uid) ? "picked" : "",
+    selectedCard === leader.uid ? "selected" : "",
+  ];
   return `
-    <div class="card leader ${leader.mode === "rest" ? "rest" : ""}">
+    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}">
       <div class="card-name">${colorDots(face?.colors ?? [])} ${esc(face?.name ?? leader.cardId)}</div>
-      <div class="card-line">Leader — ${leader.side === "front" ? "face avant" : "face arrière (éveillé)"}</div>
-      <div class="card-line"><b>${face?.power ?? "?"}</b> de puissance</div>
-      <div class="card-mode">${leader.mode === "rest" ? "Inertie" : "Action"}</div>
+      <div class="card-line">Leader — ${leader.side === "front" ? "face avant" : "éveillé"}</div>
+      <div class="card-line"><b>${face?.power ?? "?"}</b></div>
     </div>`;
 }
 
-function zone(title: string, cards: readonly CardView[], options: { selectable?: boolean; empty?: string } = {}): string {
-  const content = cards.length > 0 ? cards.map((c) => cardBox(c, options)).join("") : `<span class="empty">${options.empty ?? "vide"}</span>`;
+function zone(title: string, cards: readonly CardView[], info: RenderInfo, slotPrefix?: string): string {
+  const content =
+    cards.length > 0
+      ? cards.map((c, i) => cardBox(c, info, slotPrefix ? `${slotPrefix}:${i}` : undefined)).join("")
+      : `<span class="empty">vide</span>`;
   return `<div class="zone"><div class="zone-title">${title} (${cards.length})</div><div class="cards">${content}</div></div>`;
 }
 
-function playerArea(p: PlayerZonesView, isMe: boolean, canSelectEnergy: boolean): string {
+function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string {
   const dropNames = p.drop.map((c) => (isVisible(c) ? cardName(db, c.cardId) : "?"));
-  return `
-    <section class="player ${isMe ? "me" : "opponent"}">
-      <h2>${isMe ? `Moi (${p.id})` : `Adversaire (${p.id})`}</h2>
-      <div class="row">
-        <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader)}</div></div>
-        <div class="zone counters">
-          <div>Deck : <b>${p.deckCount}</b></div>
-          <div>Vie : <b>${p.life.length}</b></div>
-          <div>Main : <b>${p.hand.length}</b></div>
-          <div>Marqueurs Énergie : <b>${p.energyMarkers}</b></div>
-          <div>Dispersion : <b>${p.drop.length}</b></div>
-        </div>
+  const deciding = state?.pending?.player === p.id;
+  const handZone = zone("Main", p.hand, info, `hand:${p.id}`);
+  const parts = [
+    `<h2>${p.id}${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}</h2>`,
+    `<div class="row">
+      <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader, info)}</div></div>
+      <div class="zone counters">
+        <div>Deck : <b>${p.deckCount}</b></div>
+        <div>Vie : <b>${p.life.length}</b></div>
+        <div>Main : <b>${p.hand.length}</b></div>
+        <div>Marqueurs Énergie : <b>${p.energyMarkers}</b></div>
+        <div>Dispersion : <b>${p.drop.length}</b> · Dim. parallèle : <b>${p.warp.length}</b></div>
       </div>
-      ${zone("Zone de Combat", p.battle)}
-      ${zone("Énergie", p.energy, { selectable: canSelectEnergy })}
-      ${p.combo.length > 0 ? zone("Zone de Combo", p.combo) : ""}
-      ${p.zEnergy.length > 0 ? zone("Énergie Z", p.zEnergy) : ""}
-      ${zone("Vie", p.life)}
-      ${isMe ? zone("Ma main", p.hand) : ""}
-      ${dropNames.length > 0 ? `<div class="drop">Dispersion : ${esc(dropNames.join(", "))}</div>` : ""}
-      ${p.removed.length > 0 ? `<div class="drop">Retirées de la partie : ${esc(p.removed.map((c) => cardName(db, c.cardId)).join(", "))}</div>` : ""}
-    </section>`;
+      ${zone("Vie", p.life, info, `life:${p.id}`)}
+    </div>`,
+    zone("Zone de Combat", p.battle, info),
+    `<div class="row">${zone("Énergie", p.energy, info)}${p.combo.length > 0 ? zone("Combo", p.combo, info) : ""}${
+      p.zEnergy.length > 0 ? zone("Énergie Z", p.zEnergy, info) : ""
+    }</div>`,
+    handZone,
+    dropNames.length > 0 ? `<div class="drop">Dispersion : ${esc(dropNames.join(", "))}</div>` : "",
+    p.removed.length > 0 ? `<div class="drop">Retirées de la partie : ${esc(p.removed.map((c) => cardName(db, c.cardId)).join(", "))}</div>` : "",
+  ];
+  // En haut de l'écran, on affiche la main en premier (plus près du bord), comme sur une table.
+  const ordered = top ? [parts[0], parts[4], parts[3], parts[2], parts[1], parts[5], parts[6]] : parts;
+  return `<section class="player ${deciding ? "deciding" : ""}">${ordered.join("")}</section>`;
 }
 
 function counterSummary(view: PlayerView): string {
@@ -295,74 +456,68 @@ function battleSummary(view: PlayerView): string {
   )}</b>${target}</div>`;
 }
 
-/** Ordre d'affichage des groupes de boutons. */
-const GROUPS: [string, Action["type"][]][] = [
-  [
-    "Décision",
-    [
-      "CHOOSE_FIRST_PLAYER",
-      "MULLIGAN",
-      "CHARGE_ENERGY",
-      "DECLARE_BLOCKER",
-      "TAKE_LIFE",
-      "COMBO_TO_Z_ENERGY",
-      "CHOOSE_CARDS",
-      "CHOOSE_LIFE",
-      "CHOOSE_AUTO",
-      "CHOOSE_BLIND",
-      "CHOOSE_OPTION",
-    ],
-  ],
-  ["Contres", ["DECLARE_COUNTER", "PASS_COUNTER"]],
-  ["Capacités", ["ACTIVATE", "SUCCESSOR", "OVER_REALM"]],
-  ["Jouer une carte", ["PLAY_CARD"]],
-  ["Combos", ["COMBO"]],
-  ["Attaquer", ["ATTACK"]],
-  ["Leader", ["AWAKEN"]],
-  ["Continuer", ["END_STEP", "END_MAIN_PHASE"]],
-];
+const button = (a: Action, view: PlayerView, extraClass = "") =>
+  `<button class="${extraClass}" data-action="${currentActions.indexOf(a)}">${esc(describeAction(a, view, db))}</button>`;
 
-function actionsPanel(view: PlayerView): string {
-  currentActions = getLegalActions(state, screenOwner, ctx);
-  const myTurnToDecide = state.pending?.player === screenOwner;
+function actionsPanel(view: PlayerView, info: RenderInfo): string {
+  const s = state!;
+  const me = decider();
+  const canSee = mode === "solo" || s.pending?.player === screenOwner;
   let html = "";
-  if (myTurnToDecide) {
-    html += `<p class="prompt">${esc(describePending(view.pending))}</p>`;
-    const looked = view.pending?.type === "CHOOSE_CARDS" ? view.pending.looked : undefined;
-    if (looked) {
-      html += `<p class="hint">Cartes regardées (vous seul les voyez) : ${esc(looked.map((c) => cardName(db, c.cardId)).join(", "))}</p>`;
+  if (!s.result && canSee) {
+    html += `<p class="prompt">${me} — ${esc(describePending(view.pending))}</p>`;
+    const p = view.pending;
+    // Cartes regardées (dessus du deck) : affichées comme des cartes cochables.
+    if (p?.type === "CHOOSE_CARDS" && p.looked) {
+      html += `<div class="zone"><div class="zone-title">Cartes regardées (vous seul les voyez)</div><div class="cards">${p.looked
+        .map((c) => cardBox({ uid: c.uid, cardId: c.cardId, owner: me, mode: "active" }, info))
+        .join("")}</div></div>`;
     }
-    const usesPayment = currentActions.some((a) => ["PLAY_CARD", "COMBO", "ACTIVATE", "DECLARE_COUNTER"].includes(a.type));
-    if (usesPayment) {
-      const custom = selectedEnergy.size > 0 || selectedMarkers > 0;
-      html += `<p class="hint">Paiement : ${
-        custom
-          ? `<b>personnalisé</b> (${selectedEnergy.size} Énergie(s) + ${selectedMarkers} marqueur(s)) <button data-clear>Effacer</button>`
-          : "suggéré automatiquement (cliquez sur vos Énergies pour choisir vous-même)"
-      }${
-        view.players[screenOwner].energyMarkers > 0
-          ? ` · Marqueurs utilisés : <input type="number" min="0" max="${view.players[screenOwner].energyMarkers}" value="${selectedMarkers}" data-markers>`
-          : ""
-      }</p>`;
+    if (p && PICK_DECISIONS.includes(p.type)) {
+      const { min, max } = pickBounds(view);
+      const n = picked.size;
+      const ok = n >= min && n <= max;
+      const what = min === max ? `${min}` : `entre ${min} et ${max}`;
+      html += `<p class="hint">Cliquez sur les cartes surlignées pour en choisir ${what} (choisies : ${n}).</p>`;
+      html += `<button class="primary" data-validate ${ok ? "" : "disabled"}>Valider le choix</button>`;
+    } else {
+      // Actions de la carte sélectionnée.
+      if (selectedCard) {
+        const mine = currentActions.filter((a) => anchorOf(a) === selectedCard);
+        html += `<div class="group"><h3>${esc(nameOf(view, db, selectedCard))}</h3>${
+          mine.length ? mine.map((a) => button(a, view)).join("") : `<p class="hint">Aucune action pour cette carte maintenant.</p>`
+        }</div>`;
+      } else if (info.actionable.size > 0) {
+        html += `<p class="hint">Cliquez sur une carte surlignée pour voir ce qu'elle peut faire.</p>`;
+      }
+      // Actions générales (sans carte associée).
+      const general = currentActions.filter((a) => anchorOf(a) === null && a.type !== "CONCEDE");
+      if (general.length) html += `<div class="group">${general.map((a) => button(a, view, "primary")).join("")}</div>`;
+      if (paymentPossible()) {
+        const custom = selectedEnergy.size > 0 || selectedMarkers > 0;
+        const markers = view.players[me].energyMarkers;
+        html += `<p class="hint">Paiement ${
+          custom
+            ? `<b>choisi</b> : ${selectedEnergy.size} Énergie(s) + ${selectedMarkers} marqueur(s) <button data-clear>Effacer</button>`
+            : "automatique — pour choisir vous-même, cochez vos Énergies avec la touche Ctrl + clic"
+        }${markers > 0 ? ` · Marqueurs : <input type="number" min="0" max="${markers}" value="${selectedMarkers}" data-markers>` : ""}</p>`;
+      }
     }
-    for (const [title, types] of GROUPS) {
-      const buttons = currentActions
-        .map((a, i) => ({ a, i }))
-        .filter(({ a }) => types.includes(a.type))
-        .map(({ a, i }) => `<button data-action="${i}">${esc(describeAction(a, view, db))}</button>`);
-      if (buttons.length > 0) html += `<div class="group"><h3>${title}</h3>${buttons.join("")}</div>`;
-    }
-  } else if (!state.result) {
-    html += `<p class="prompt">En attente de ${state.pending?.player}.</p>`;
+  } else if (!s.result) {
+    html += `<p class="prompt">En attente de ${s.pending?.player}.</p>`;
   }
   if (errorMessage) html += `<p class="error">Coup refusé : ${esc(errorMessage)}</p>`;
-  const concede = currentActions.findIndex((a) => a.type === "CONCEDE");
-  if (concede >= 0) html += `<div class="group"><button class="danger" data-action="${concede}">Abandonner</button></div>`;
+  const concede = currentActions.find((a) => a.type === "CONCEDE");
+  if (concede) html += `<div class="group"><button class="danger" data-action="${currentActions.indexOf(concede)}">Abandonner</button></div>`;
   return html;
 }
 
 function render(): void {
-  if (!revealed && !state.result) {
+  if (!state) {
+    showSetup();
+    return;
+  }
+  if (mode === "hotseat" && !revealed && !state.result) {
     app.innerHTML = `
       <div class="pass-screen">
         <h1>Passez l'ordinateur à ${screenOwner}</h1>
@@ -371,71 +526,124 @@ function render(): void {
       </div>`;
     return;
   }
-  const view = getPlayerView(state, screenOwner);
-  const opponent = screenOwner === "P1" ? "P2" : "P1";
-  const canSelectEnergy =
-    state.pending?.player === screenOwner && ["MAIN", "OFFENSE", "DEFENSE", "COUNTER_WINDOW"].includes(state.pending.type);
+  const view = currentView();
+  const me = decider();
+  currentActions = mode === "solo" || state.pending?.player === screenOwner ? getLegalActions(state, me, ctx) : [];
+  const info: RenderInfo = {
+    view,
+    actionable: new Set(currentActions.map(anchorOf).filter((x): x is string => x !== null)),
+    pickable: pickables(view),
+  };
+  const bottom = bottomPlayer();
+  const top = bottom === "P1" ? "P2" : "P1";
   const result = view.result
-    ? `<div class="result">${
-        view.result.kind === "win" ? `🏆 ${view.result.winner} gagne la partie` : "Match nul"
-      } — ${esc(view.result.reason)} <button data-new>Nouvelle partie</button></div>`
+    ? `<div class="result">${view.result.kind === "win" ? `🏆 ${view.result.winner} gagne la partie` : "Match nul"} — ${esc(
+        view.result.reason,
+      )} <button data-new>Nouvelle partie</button></div>`
     : "";
   app.innerHTML = `
     <header>
-      <div><b>DBS Masters — simulateur (test)</b> · graine ${seed}</div>
+      <div><b>DBS Masters — simulateur</b> · graine ${seed}</div>
       <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
         <button data-new>Nouvelle partie</button>
-        <button data-export title="Télécharge la partie (pour signaler un bug)">Exporter la partie</button>
-        <label class="file-button" title="Recharge une partie exportée">Charger une partie<input type="file" accept=".json,application/json" data-import hidden></label>
+        <button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>
+        <label class="file-button" title="Recharge une partie exportée">Charger<input type="file" accept=".json,application/json" data-import hidden></label>
       </div>
     </header>
     ${result}
     <main>
       <div class="board">
-        ${playerArea(view.players[opponent], false, false)}
+        ${playerArea(view.players[top], info, true)}
         ${battleSummary(view)}
         ${counterSummary(view)}
-        ${playerArea(view.players[screenOwner], true, canSelectEnergy)}
+        ${playerArea(view.players[bottom], info, false)}
       </div>
       <aside>
-        <div class="actions">${actionsPanel(view)}</div>
+        <div class="actions">${actionsPanel(view, info)}</div>
         <div class="log"><h3>Journal</h3>${log
-          .slice(-60)
+          .slice(-80)
           .reverse()
-          .map((line) => `<div>${esc(line)}</div>`)
+          .map((line) => `<div class="${line.startsWith("⚠") ? "warn" : ""}">${esc(line)}</div>`)
           .join("")}</div>
       </aside>
     </main>`;
+  // Quand il faut choisir des cartes, on les amène à l'écran.
+  if (info.pickable.size > 0 && picked.size === 0) {
+    document.querySelector(".card.pickable")?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
 }
 
-// Un seul écouteur pour tous les boutons (délégation d'événements).
+// ---------------------------------------------------------------------------
+// Clics
+// ---------------------------------------------------------------------------
+
 app.addEventListener("click", (event) => {
-  const el = (event.target as HTMLElement).closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-energy],[data-clear],[data-export],[data-start]",
+  const target = event.target as HTMLElement;
+  const el = target.closest<HTMLElement>(
+    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot]",
   );
   if (!el) return;
-  if (el.dataset["action"] !== undefined) act(currentActions[Number(el.dataset["action"])]!);
-  else if (el.dataset["export"] !== undefined) exportGame();
-  else if (el.dataset["start"] !== undefined) newGame();
-  else if (el.dataset["reveal"] !== undefined) {
+  if (el.dataset["action"] !== undefined) return act(currentActions[Number(el.dataset["action"])]!);
+  if (el.dataset["validate"] !== undefined) {
+    const action = pickedAction(currentView());
+    if (action) act(action);
+    return;
+  }
+  if (el.dataset["export"] !== undefined) return exportGame();
+  if (el.dataset["start"] !== undefined) return newGame();
+  if (el.dataset["new"] !== undefined) {
+    state = null;
+    return showSetup();
+  }
+  if (el.dataset["reveal"] !== undefined) {
     revealed = true;
-    render();
-  } else if (el.dataset["new"] !== undefined) showSetup();
-  else if (el.dataset["clear"] !== undefined) {
-    clearSelection();
-    render();
-  } else if (el.dataset["energy"] !== undefined) {
-    const uid = el.dataset["energy"];
+    return render();
+  }
+  if (el.dataset["clear"] !== undefined) {
+    selectedEnergy.clear();
+    selectedMarkers = 0;
+    return render();
+  }
+  const slot = el.dataset["slot"];
+  if (slot === undefined || !state) return;
+  const view = currentView();
+  // 1) Décision « choisissez des cartes » : on coche / décoche.
+  const pickable = pickables(view);
+  if (pickable.has(slot)) {
+    if (picked.has(slot)) picked.delete(slot);
+    else {
+      const { max } = pickBounds(view);
+      if (max === 1) picked.clear();
+      if (picked.size < max) picked.add(slot);
+    }
+    return render();
+  }
+  const uid = el.dataset["card"];
+  if (!uid) return;
+  // 2) Ctrl + clic sur une de ses Énergies : choisir soi-même le paiement.
+  const energyOfDecider = view.players[decider()].energy.some((c) => isVisible(c) && c.uid === uid);
+  if ((event as MouseEvent).ctrlKey && energyOfDecider && paymentPossible()) {
     if (selectedEnergy.has(uid)) selectedEnergy.delete(uid);
     else selectedEnergy.add(uid);
-    render();
+    return render();
   }
+  // 3) Sinon : sélectionner la carte pour voir ses actions.
+  selectedCard = selectedCard === uid ? null : uid;
+  render();
 });
+
 app.addEventListener("change", (event) => {
   const el = event.target as HTMLInputElement;
   if (el.dataset["prompt"] !== undefined) {
     counterPrompt[el.dataset["prompt"] as PlayerId] = el.checked ? "always" : "only_if_playable";
+  } else if (el.dataset["mode"] !== undefined) {
+    mode = el.dataset["mode"] as Mode;
+    // Deux joueurs : par défaut, on demande toujours (pour ne rien révéler à l'adversaire).
+    const prompt: CounterPrompt = mode === "hotseat" ? "always" : "only_if_playable";
+    counterPrompt.P1 = prompt;
+    counterPrompt.P2 = prompt;
+    showSetup();
   } else if (el.dataset["import"] !== undefined && el.files?.[0]) {
     void importGame(el.files[0]);
   } else if (el.dataset["markers"] !== undefined) {
