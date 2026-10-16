@@ -50,7 +50,14 @@ export type Action =
    * Dispersion). `index` = position de la Capacité sur la carte ; `payment` = Énergies payées
    * pour le coût d'énergie de la Capacité (s'il y en a un).
    */
-  | { type: "ACTIVATE"; player: PlayerId; uid: string; index: number; payment: PaymentChoice };
+  | { type: "ACTIVATE"; player: PlayerId; uid: string; index: number; payment: PaymentChoice }
+  /** 9-7 : ne rien déclarer pendant une fenêtre de contre. */
+  | { type: "PASS_COUNTER"; player: PlayerId }
+  /**
+   * 22-10 : déclarer le [Contre] d'une carte de sa main. `alt` : payer avec le coût alternatif
+   * indiqué par la carte (ex. une carte de Vie au lieu de l'énergie).
+   */
+  | { type: "DECLARE_COUNTER"; player: PlayerId; uid: string; alt: boolean; payment: PaymentChoice };
 
 /** Ce que le joueur passe en mode Inertie pour payer : ses Énergies (uids) et des marqueurs Énergie. */
 export interface PaymentChoice {
@@ -71,14 +78,24 @@ export type GameEvent =
   /** La Zone d'Énergie est publique : la carte posée est révélée. */
   | { type: "ENERGY_CHARGED"; player: PlayerId; uid: string; cardId: string; mode: "active" | "rest" }
   | { type: "PHASE_STARTED"; player: PlayerId; phase: Phase }
+  /** 5-5-2-1 : la mise en jeu est déclarée (coût payé, carte révélée), avant la fenêtre de contre. */
   | {
-      type: "CARD_PLAYED";
+      type: "PLAY_DECLARED";
       player: PlayerId;
       uid: string;
       cardId: string;
       energyRested: string[];
       markersUsed: number;
     }
+  /** 5-5-2-3 : la carte arrive dans la Zone de Combat. */
+  | { type: "CARD_PLAYED"; player: PlayerId; uid: string; cardId: string }
+  | { type: "COUNTER_WINDOW_OPENED"; on: "play" | "attack"; player: PlayerId }
+  | { type: "COUNTER_WINDOW_CLOSED" }
+  /** Un [Contre] est déclaré : la carte est révélée. */
+  | { type: "COUNTER_DECLARED"; player: PlayerId; uid: string; cardId: string; text: string }
+  | { type: "COUNTER_RESOLVING"; player: PlayerId; cardId: string }
+  | { type: "ATTACK_NEGATED" }
+  | { type: "ATTACKS_LIMITED"; player: PlayerId; remaining: number; battleCardsOnly: boolean }
   | { type: "TURN_ENDED"; player: PlayerId }
   | { type: "ATTACK_DECLARED"; player: PlayerId; attacker: string; target: string }
   | { type: "BLOCKER_DECLARED"; player: PlayerId; uid: string }

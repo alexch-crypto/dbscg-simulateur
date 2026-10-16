@@ -144,7 +144,7 @@ describe("[Auto.] pendant l'attaque : contre, puis autos, puis blocage", () => {
     give(s, "P1", "P-223", "battle"); // Zarbon, Bloqueur
     const r = play(s, { type: "ATTACK", player: "P2", attacker: "P2-L", target: "P1-L" });
     const types = r.events.map((e) => e.type);
-    expect(types).toEqual(["ATTACK_DECLARED", "AUTO_TRIGGERED", "CARDS_DRAWN"]);
+    expect(types).toEqual(["ATTACK_DECLARED", "AUTO_TRIGGERED", "COUNTER_WINDOW_OPENED", "COUNTER_WINDOW_CLOSED", "CARDS_DRAWN"]);
     expect(r.state.pending).toEqual({ type: "BLOCKER", player: "P1" });
   });
 

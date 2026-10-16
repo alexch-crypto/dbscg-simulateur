@@ -12,7 +12,7 @@ import type { DeckList } from "./cards/types";
 import { applyAction } from "./actions";
 import type { Action, GameContext, GameEvent } from "./protocol";
 import { createGame } from "./state/create";
-import type { GameState, PlayerId } from "./state/types";
+import type { CounterPrompt, GameState, PlayerId } from "./state/types";
 
 export const RECORD_FORMAT = "dbscg-partie";
 export const RECORD_VERSION = 1;
@@ -22,11 +22,17 @@ export interface GameRecord {
   version: number;
   seed: number;
   decks: Record<PlayerId, DeckList>;
+  /** Réglage des fenêtres de contre de chaque joueur (absent = « always »). */
+  counterPrompt?: Record<PlayerId, CounterPrompt>;
   actions: Action[];
 }
 
-export function newRecord(seed: number, decks: Record<PlayerId, DeckList>): GameRecord {
-  return { format: RECORD_FORMAT, version: RECORD_VERSION, seed, decks, actions: [] };
+export function newRecord(
+  seed: number,
+  decks: Record<PlayerId, DeckList>,
+  counterPrompt?: Record<PlayerId, CounterPrompt>,
+): GameRecord {
+  return { format: RECORD_FORMAT, version: RECORD_VERSION, seed, decks, ...(counterPrompt ? { counterPrompt } : {}), actions: [] };
 }
 
 export type ReplayResult =
@@ -41,7 +47,7 @@ export function replayGame(record: unknown, ctx: GameContext): ReplayResult {
   if (typeof r.seed !== "number" || !r.decks || !Array.isArray(r.actions)) {
     return { ok: false, error: "fichier de partie incomplet" };
   }
-  const created = createGame({ decks: r.decks, seed: r.seed }, ctx.cards);
+  const created = createGame({ decks: r.decks, seed: r.seed, ...(r.counterPrompt ? { counterPrompt: r.counterPrompt } : {}) }, ctx.cards);
   if (!created.ok) return { ok: false, error: `decks invalides : ${created.errors.join(" ; ")}` };
   let state = created.state;
   const events = [...created.events];

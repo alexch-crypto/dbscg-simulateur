@@ -5,10 +5,11 @@ import { ctx, db, freezer } from "./helpers";
 /** Joue une partie au hasard parmi les coups autorisés et renvoie son enregistrement. */
 function randomGame(seed: number, maxMoves = 600): { record: GameRecord; finalState: unknown } {
   const decks = { P1: freezer.deck!, P2: freezer.deck! };
-  const created = createGame({ decks, seed }, db);
+  const counterPrompt = { P1: "always", P2: "always" } as const;
+  const created = createGame({ decks, seed, counterPrompt }, db);
   if (!created.ok) throw new Error(created.errors.join());
   let state = created.state;
-  const record = newRecord(seed, decks);
+  const record = newRecord(seed, decks, { ...counterPrompt });
   let x = seed;
   const pick = (n: number) => ((x = (x * 1103515245 + 12345) % 2147483648), x % n);
   for (let i = 0; i < maxMoves && !state.result; i++) {

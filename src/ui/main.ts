@@ -15,6 +15,7 @@ import {
   parseCardFile,
   replayGame,
   type Action,
+  type CounterPrompt,
   type GameRecord,
   type CardDefinition,
   type CardView,
@@ -56,16 +57,37 @@ let currentActions: Action[] = [];
 
 const app = document.getElementById("app")!;
 
+/** Réglage des fenêtres de contre choisi par chaque joueur sur l'écran de début de partie. */
+const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "always", P2: "always" };
+
+/** Écran de début de partie : réglages de chaque joueur. */
+function showSetup(): void {
+  const option = (p: PlayerId) => `
+    <label class="setting">
+      <input type="checkbox" data-prompt="${p}" ${counterPrompt[p] === "always" ? "checked" : ""}>
+      <b>${p}</b> : toujours me demander si je veux contrer
+      <span class="hint">(décoché : la partie ne s'arrête que si j'ai un contre jouable — plus rapide,
+      mais en ligne l'adversaire pourrait deviner que j'ai un contre en main)</span>
+    </label>`;
+  app.innerHTML = `
+    <div class="pass-screen">
+      <h1>Nouvelle partie</h1>
+      <p>Freezer contre Freezer. Réglage des fenêtres de contre :</p>
+      ${option("P1")}${option("P2")}
+      <button data-start>Commencer la partie</button>
+    </div>`;
+}
+
 function newGame(): void {
   seed = Math.floor(Math.random() * 1_000_000);
   const decks = { P1: freezer.deck!, P2: freezer.deck! };
-  const result = createGame({ decks, seed }, db);
+  const result = createGame({ decks, seed, counterPrompt: { ...counterPrompt } }, db);
   if (!result.ok) {
     app.textContent = `Deck invalide : ${result.errors.join(" ; ")}`;
     return;
   }
   state = result.state;
-  record = newRecord(seed, decks);
+  record = newRecord(seed, decks, { ...counterPrompt });
   log = [];
   addToLog(result.events, "P1");
   errorMessage = "";
@@ -87,7 +109,13 @@ function clearSelection(): void {
 
 function act(action: Action): void {
   // Paiement personnalisé : remplace le paiement suggéré par la sélection du joueur.
-  if ((action.type === "PLAY_CARD" || action.type === "COMBO") && (selectedEnergy.size > 0 || selectedMarkers > 0)) {
+  if (
+    (action.type === "PLAY_CARD" ||
+      action.type === "COMBO" ||
+      action.type === "ACTIVATE" ||
+      (action.type === "DECLARE_COUNTER" && !action.alt)) &&
+    (selectedEnergy.size > 0 || selectedMarkers > 0)
+  ) {
     action = { ...action, payment: { energy: [...selectedEnergy], markers: selectedMarkers } };
   }
   const r = applyAction(state, action, ctx);
@@ -249,6 +277,14 @@ function playerArea(p: PlayerZonesView, isMe: boolean, canSelectEnergy: boolean)
     </section>`;
 }
 
+function counterSummary(view: PlayerView): string {
+  const w = view.counterWindow;
+  if (!w) return "";
+  const what = w.event.on === "play" ? `mise en jeu de ${esc(cardName(db, w.event.cardId))}` : "attaque";
+  const chain = w.chain.map((l) => `${l.player} : ${esc(cardName(db, l.cardId))}`).join(" → ");
+  return `<div class="battle">🛡 Fenêtre de contre (${what})${chain ? ` — contres déclarés : ${chain}` : ""}</div>`;
+}
+
 function battleSummary(view: PlayerView): string {
   const b = view.battle;
   if (!b) return "";
@@ -276,6 +312,7 @@ const GROUPS: [string, Action["type"][]][] = [
       "CHOOSE_OPTION",
     ],
   ],
+  ["Contres", ["DECLARE_COUNTER", "PASS_COUNTER"]],
   ["Capacités", ["ACTIVATE"]],
   ["Jouer une carte", ["PLAY_CARD"]],
   ["Combos", ["COMBO"]],
@@ -294,7 +331,7 @@ function actionsPanel(view: PlayerView): string {
     if (looked) {
       html += `<p class="hint">Cartes regardées (vous seul les voyez) : ${esc(looked.map((c) => cardName(db, c.cardId)).join(", "))}</p>`;
     }
-    const usesPayment = currentActions.some((a) => a.type === "PLAY_CARD" || a.type === "COMBO");
+    const usesPayment = currentActions.some((a) => ["PLAY_CARD", "COMBO", "ACTIVATE", "DECLARE_COUNTER"].includes(a.type));
     if (usesPayment) {
       const custom = selectedEnergy.size > 0 || selectedMarkers > 0;
       html += `<p class="hint">Paiement : ${
@@ -336,7 +373,7 @@ function render(): void {
   const view = getPlayerView(state, screenOwner);
   const opponent = screenOwner === "P1" ? "P2" : "P1";
   const canSelectEnergy =
-    state.pending?.player === screenOwner && ["MAIN", "OFFENSE", "DEFENSE"].includes(state.pending.type);
+    state.pending?.player === screenOwner && ["MAIN", "OFFENSE", "DEFENSE", "COUNTER_WINDOW"].includes(state.pending.type);
   const result = view.result
     ? `<div class="result">${
         view.result.kind === "win" ? `🏆 ${view.result.winner} gagne la partie` : "Match nul"
@@ -357,6 +394,7 @@ function render(): void {
       <div class="board">
         ${playerArea(view.players[opponent], false, false)}
         ${battleSummary(view)}
+        ${counterSummary(view)}
         ${playerArea(view.players[screenOwner], true, canSelectEnergy)}
       </div>
       <aside>
@@ -373,15 +411,16 @@ function render(): void {
 // Un seul écouteur pour tous les boutons (délégation d'événements).
 app.addEventListener("click", (event) => {
   const el = (event.target as HTMLElement).closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-energy],[data-clear],[data-export]",
+    "[data-action],[data-reveal],[data-new],[data-energy],[data-clear],[data-export],[data-start]",
   );
   if (!el) return;
   if (el.dataset["action"] !== undefined) act(currentActions[Number(el.dataset["action"])]!);
   else if (el.dataset["export"] !== undefined) exportGame();
+  else if (el.dataset["start"] !== undefined) newGame();
   else if (el.dataset["reveal"] !== undefined) {
     revealed = true;
     render();
-  } else if (el.dataset["new"] !== undefined) newGame();
+  } else if (el.dataset["new"] !== undefined) showSetup();
   else if (el.dataset["clear"] !== undefined) {
     clearSelection();
     render();
@@ -394,7 +433,9 @@ app.addEventListener("click", (event) => {
 });
 app.addEventListener("change", (event) => {
   const el = event.target as HTMLInputElement;
-  if (el.dataset["import"] !== undefined && el.files?.[0]) {
+  if (el.dataset["prompt"] !== undefined) {
+    counterPrompt[el.dataset["prompt"] as PlayerId] = el.checked ? "always" : "only_if_playable";
+  } else if (el.dataset["import"] !== undefined && el.files?.[0]) {
     void importGame(el.files[0]);
   } else if (el.dataset["markers"] !== undefined) {
     selectedMarkers = Math.max(0, Number(el.value) || 0);
@@ -402,4 +443,4 @@ app.addEventListener("change", (event) => {
   }
 });
 
-newGame();
+showSetup();

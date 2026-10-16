@@ -72,7 +72,7 @@ export function checkConditions(s: GameState, player: PlayerId, conditions: unkn
 }
 
 /** Coût d'énergie d'une carte pour les filtres (1-2-5 : coût total, ou coût de couleur s'il est plus grand). */
-function energyCostOf(def: CardDefinition | undefined): number {
+export function energyCostOf(def: CardDefinition | undefined): number {
   if (!def?.cost) return 0;
   const total = def.cost.total === "X" ? 0 : def.cost.total;
   const colors = Object.values(def.cost.specified).reduce((a, b) => a + (b ?? 0), 0);

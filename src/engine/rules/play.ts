@@ -16,6 +16,7 @@ import {
   type EnergySource,
 } from "./energy";
 import { checkpoint, queueTriggers } from "./autos";
+import { openCounterWindow } from "./counters";
 import { uniqueBlocks } from "./keywords";
 
 /**
@@ -129,24 +130,43 @@ export function playBattleCard(
   const error = payEnergy(s, action.player, payment, action.payment, ctx);
   if (error) return error;
 
-  // 5-5-2-2 : fenêtre de contre (Capacités [Contre : Mise en jeu], pas encore gérées).
-  // 5-5-2-3 : la carte de Combat est jouée dans la Zone de Combat, en mode Action
-  // (les effets qui la jouent en mode Inertie le précisent, ex. BT24-068).
-  p.hand.splice(index, 1);
-  instance.mode = "active";
+  // 5-5-2-1 : la carte est révélée et sa mise en jeu déclarée.
   instance.faceUp = true;
-  p.battle.push(instance);
   events.push({
-    type: "CARD_PLAYED",
+    type: "PLAY_DECLARED",
     player: action.player,
     uid: instance.uid,
     cardId: instance.cardId,
     energyRested: [...action.payment.energy],
     markersUsed: action.payment.markers,
   });
-  // 9-6-9-4 : « Quand cette carte est jouée » se met en suspens ; point de contrôle, puis
-  // retour au timing libre de la phase principale.
-  queueTriggers(s, { event: "played", card: instance }, ctx, events);
-  checkpoint(s, ctx, { kind: "restore", pending: { type: "MAIN", player: action.player } }, events);
+  // 5-5-2-2 : fenêtre de contre ([Contre : Mise en jeu]), puis 5-5-2-3 (finishPlay).
+  s.pending = null;
+  openCounterWindow(
+    s,
+    ctx,
+    { on: "play", player: action.player, cardUid: instance.uid, cardId: instance.cardId },
+    { kind: "finish_play", player: action.player, uid: instance.uid },
+    events,
+  );
   return null;
+}
+
+/**
+ * 5-5-2-3 : la carte de Combat est jouée dans la Zone de Combat, en mode Action (les effets qui
+ * la jouent en mode Inertie le précisent). Puis « Quand cette carte est jouée » et point de contrôle.
+ */
+export function finishPlay(s: GameState, ctx: GameContext, player: PlayerId, uid: string, events: GameEvent[]): void {
+  const p = s.players[player];
+  const index = p.hand.findIndex((c) => c.uid === uid);
+  if (index >= 0) {
+    const instance = p.hand.splice(index, 1)[0]!;
+    instance.mode = "active";
+    instance.faceUp = true;
+    p.battle.push(instance);
+    events.push({ type: "CARD_PLAYED", player, uid: instance.uid, cardId: instance.cardId });
+    // 9-6-9-4 : « Quand cette carte est jouée » se met en suspens.
+    queueTriggers(s, { event: "played", card: instance }, ctx, events);
+  }
+  checkpoint(s, ctx, { kind: "restore", pending: { type: "MAIN", player } }, events);
 }

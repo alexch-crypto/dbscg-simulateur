@@ -49,7 +49,7 @@ function activationZone(ability: RawAbility): "board" | "hand" | "drop" | "combo
 }
 
 /** Analyse le coût de Capacité. Renvoie null si une partie n'est pas encore gérée. */
-function parseCost(cost: unknown): { energy: EnergyPayment | null; others: EffectStep[] } | null {
+export function parseCost(cost: unknown): { energy: EnergyPayment | null; others: EffectStep[] } | null {
   if (cost === undefined) return { energy: null, others: [] };
   if (!Array.isArray(cost)) return null;
   let energy: EnergyPayment | null = null;
@@ -61,6 +61,10 @@ function parseCost(cost: unknown): { energy: EnergyPayment | null; others: Effec
       others.push(c as EffectStep);
     } else if (c["do"] === "discard" && typeof c["count"] === "number") {
       others.push(c as EffectStep);
+    } else if (c["do"] === "self_restriction") {
+      // « Vous ne pouvez pas ... pour toute la durée du tour » : toujours payable ; la
+      // restriction elle-même n'est pas encore appliquée (signalée pendant la résolution).
+      others.push(c as EffectStep);
     } else {
       return null;
     }
@@ -69,7 +73,7 @@ function parseCost(cost: unknown): { energy: EnergyPayment | null; others: Effec
 }
 
 /** Les autres coûts (Vie, défausse) peuvent-ils être payés ? */
-function otherCostsPayable(s: GameState, player: PlayerId, others: EffectStep[], self: string, ctx: GameContext): boolean {
+export function otherCostsPayable(s: GameState, player: PlayerId, others: EffectStep[], self: string, ctx: GameContext): boolean {
   const p = s.players[player];
   for (const c of others) {
     const n = c["count"] as number;
@@ -173,7 +177,11 @@ export function activateAbility(
   if (limits["once_per_turn"]) s.turnUsage[keys.once] = (s.turnUsage[keys.once] ?? 0) + 1;
   if (typeof limits["limit"] === "number") s.turnUsage[keys.limit] = (s.turnUsage[keys.limit] ?? 0) + 1;
   // ... puis les autres parties du coût (choix de cartes de Vie, défausse), puis l'effet (9-4-5).
-  const steps = [...a.otherCosts, ...((a.ability["effect"] ?? []) as EffectStep[])];
+  const effect = (a.ability["effect"] ?? []) as EffectStep[];
+  // 22-10-3-1 : une Capacité dont l'effet joue une carte ouvre une fenêtre de [Contre : Mise en
+  // jeu] pour l'adversaire, une fois les coûts payés et avant la résolution (9-4-4).
+  const playsACard = effect.some((e) => e.do === "play_self");
+  const steps = [...a.otherCosts, ...(playsACard ? [{ do: "counter_window_play" }] : []), ...effect];
   startResolution(s, ctx, action.player, { uid: a.uid, cardId: a.cardId }, steps, { kind: "restore", pending: resume }, events);
   return null;
 }

@@ -6,6 +6,7 @@ import type { Action, GameContext, GameEvent } from "./protocol";
 import { activateAwaken } from "./rules/awaken";
 import { combo, comboToZEnergy, declareAttack, declareBlocker, endStep, takeLife } from "./rules/battle";
 import { chooseAuto } from "./rules/autos";
+import { declareCounter, passCounter } from "./rules/counters";
 import { activateAbility } from "./rules/activate";
 import { answerChoice, answerOption, answerPositions } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
@@ -36,6 +37,7 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   CHOOSE_AUTO: ["CHOOSE_AUTO"],
   CHOOSE_BLIND: ["CHOOSE_BLIND"],
   CHOOSE_OPTION: ["CHOOSE_OPTION"],
+  COUNTER_WINDOW: ["PASS_COUNTER", "DECLARE_COUNTER"],
 };
 
 /** Vérifie que l'action répond bien à la décision attendue. Renvoie un message d'erreur sinon. */
@@ -121,6 +123,12 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       break;
     case "ACTIVATE":
       error = activateAbility(next, action, ctx, events);
+      break;
+    case "PASS_COUNTER":
+      passCounter(next, ctx, events);
+      break;
+    case "DECLARE_COUNTER":
+      error = declareCounter(next, action, ctx, events);
       break;
     case "CHOOSE_AUTO":
       error = chooseAuto(next, action, ctx, events);

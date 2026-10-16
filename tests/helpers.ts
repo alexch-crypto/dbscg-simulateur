@@ -18,9 +18,16 @@ export const freezer = parseCardFile(freezerFile);
 export const db = buildCardDatabase([freezer.cards]);
 export const ctx: GameContext = { cards: db };
 
-/** Nouvelle partie Freezer contre Freezer, avec une graine fixe par défaut. */
-export function newMirrorGame(seed = 42): GameState {
-  const result = createGame({ decks: { P1: freezer.deck!, P2: freezer.deck! }, seed }, db);
+/**
+ * Nouvelle partie Freezer contre Freezer, avec une graine fixe par défaut. Les fenêtres de
+ * contre ne s'arrêtent que si un joueur a un contre jouable (`counterPrompt`), pour garder les
+ * tests courts ; les tests de contre vérifient aussi le mode « always ».
+ */
+export function newMirrorGame(seed = 42, counterPrompt: "always" | "only_if_playable" = "only_if_playable"): GameState {
+  const result = createGame(
+    { decks: { P1: freezer.deck!, P2: freezer.deck! }, seed, counterPrompt: { P1: counterPrompt, P2: counterPrompt } },
+    db,
+  );
   if (!result.ok) throw new Error(result.errors.join("\n"));
   return result.state;
 }

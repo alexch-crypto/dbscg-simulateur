@@ -61,3 +61,5 @@ button.danger { color: var(--error); }
 .log div { padding: 2px 0; border-bottom: 1px solid #eee; }
 .pass-screen { max-width: 520px; margin: 15vh auto; text-align: center; background: var(--panel); padding: 32px; border-radius: 12px; border: 1px solid var(--border); }
 .pass-screen button { font-size: 16px; padding: 10px 20px; }
+.setting { display: block; text-align: left; margin: 12px 0; }
+.setting .hint { display: block; margin-left: 24px; }

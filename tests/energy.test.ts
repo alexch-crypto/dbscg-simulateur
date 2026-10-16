@@ -131,7 +131,7 @@ describe("5-5-2 : jouer une carte de Combat", () => {
     expect(p1.hand.find((c) => c.uid === zarbon.uid)).toBeUndefined();
     expect(p1.energy.map((c) => c.mode)).toEqual(["rest", "rest"]);
     expect(events).toContainEqual({
-      type: "CARD_PLAYED",
+      type: "PLAY_DECLARED",
       player: "P1",
       uid: zarbon.uid,
       cardId: "P-223",
@@ -261,7 +261,7 @@ describe("1-14 : marqueur Énergie", () => {
     });
     expect(state.players.P2.energyMarkers).toBe(0);
     expect(state.players.P2.battle).toHaveLength(1);
-    expect(events.find((e) => e.type === "CARD_PLAYED")).toMatchObject({ markersUsed: 1 });
+    expect(events.find((e) => e.type === "PLAY_DECLARED")).toMatchObject({ markersUsed: 1 });
   });
 
   it("le marqueur d'un Leader vert ne paie pas un orbe jaune", () => {

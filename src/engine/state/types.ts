@@ -101,7 +101,14 @@ export type PendingDecision =
       options: string[];
       prompt: string;
       looked?: { uid: string; cardId: string }[];
+      /** « dont le total des coûts d'énergie est de X ou moins » (20-6). */
+      maxTotalCost?: number;
     }
+  /**
+   * 4-3 : fenêtre de contre. Le joueur peut déclarer une Capacité [Contre] de sa main, ou passer.
+   * `on` : type de contre attendu (mise en jeu, attaque, ou contre d'un contre).
+   */
+  | { type: "COUNTER_WINDOW"; player: PlayerId; on: CounterOn }
   /** Choisir des positions dans la main adverse, à l'aveugle. */
   | { type: "CHOOSE_BLIND"; player: PlayerId; owner: PlayerId; min: number; max: number; prompt: string }
   /** Choisir une option (« Vous pouvez... » oui/non, quel mot-clé annuler...). */
@@ -129,7 +136,58 @@ export type Continuation =
   /** 8-1 : après les [Auto.] de la déclaration d'attaque, passer au blocage. */
   | { kind: "blocker_step" }
   /** 8-4-9 : après l'étape des Dégâts, passer à l'étape de Fin de Combat. */
-  | { kind: "battle_end_step" };
+  | { kind: "battle_end_step" }
+  /** 5-5-2-3 : après la fenêtre de contre d'une mise en jeu, jouer la carte. */
+  | { kind: "finish_play"; player: PlayerId; uid: string }
+  /** Reprendre l'effet en cours de résolution (après une fenêtre de contre ouverte au milieu). */
+  | { kind: "run_resolution" }
+  /** 8-1-5 : après la fenêtre de contre d'une attaque, point de contrôle puis blocage. */
+  | { kind: "attack_checkpoint" }
+  /** 9-7-3-5 : un maillon de la chaîne de contres est résolu, passer au suivant. */
+  | { kind: "counter_chain" };
+
+/** Type de [Contre] (22-10-2-1). */
+export type CounterOn = "play" | "attack" | "counter";
+
+/** Événement à l'origine d'une fenêtre de contre (9-7-3-1). */
+export type CounterEvent =
+  | { on: "play"; player: PlayerId; cardUid: string; cardId: string }
+  | { on: "attack"; player: PlayerId; attacker: CardRef; byBattleCard: boolean };
+
+/** Une motion de Contre de la chaîne (9-7-2). */
+export interface CounterLink {
+  player: PlayerId;
+  uid: string;
+  cardId: string;
+  ability: Record<string, unknown>;
+}
+
+/** Fenêtre de contre en cours, avec sa chaîne de motions de Contre. */
+export interface CounterWindowState {
+  event: CounterEvent;
+  chain: CounterLink[];
+  /** Maillon en cours de résolution. */
+  resolving: CounterLink | null;
+  /** true pendant le paiement des coûts (Vie, défausse) d'un contre qui vient d'être déclaré. */
+  payingCosts: boolean;
+  /** Ce qui reprend une fois la chaîne terminée (9-7-4 : l'action d'origine). */
+  then: Continuation;
+}
+
+/**
+ * Réglage de chaque joueur : la partie s'arrête-t-elle à chaque fenêtre de contre
+ * (« always » : l'adversaire ne peut rien deviner), ou seulement s'il a un contre jouable ?
+ */
+export type CounterPrompt = "always" | "only_if_playable";
+
+/** « votre adversaire ne peut plus attaquer que X fois ce tour ». */
+export interface AttackLimit {
+  player: PlayerId;
+  remaining: number;
+  /** Seules les attaques avec des cartes de Combat sont limitées (pas le Leader). */
+  battleCardsOnly: boolean;
+  untilTurn: number;
+}
 
 /**
  * Effet en cours de résolution (9). Il peut s'arrêter pour attendre un choix du joueur,
@@ -208,6 +266,8 @@ export interface BattleState {
    * Elles se résolvent même si la carte perd ses Capacités entre-temps.
    */
   pendingAutos: PendingAuto[];
+  /** L'attaque a été annulée (8-1-6-1 : on passe directement à la Fin de Combat). */
+  negated?: boolean;
 }
 
 /** Capacité [Auto.] en suspens. */
@@ -237,6 +297,11 @@ export interface GameState {
   /** Effet en cours de résolution (null si aucun). */
   resolving: EffectResolution | null;
   /**
+   * Effets interrompus par un autre (ex. un [Contre] résolu au milieu d'une Capacité qui joue
+   * une carte) : ils reprennent, du plus récent au plus ancien, quand l'effet en cours se termine.
+   */
+  suspended: EffectResolution[];
+  /**
    * Compteurs « par tour » (Une fois par tour, Limite X, Réplique...), remis à zéro au
    * début de chaque tour. Clé = capacité + carte, valeur = nombre d'utilisations.
    */
@@ -251,5 +316,11 @@ export interface GameState {
   powerMods: PowerModifier[];
   /** Autres effets continus en cours (verrouillage, annulation, mots-clés donnés). */
   effects: ContinuousEffect[];
+  /** Fenêtre de contre en cours (null si aucune). */
+  counterWindow: CounterWindowState | null;
+  /** Limites d'attaques en cours. */
+  attackLimits: AttackLimit[];
+  /** Réglages choisis par les joueurs au début de la partie. */
+  settings: { counterPrompt: Record<PlayerId, CounterPrompt> };
   result: GameResult | null;
 }

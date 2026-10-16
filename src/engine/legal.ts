@@ -16,6 +16,7 @@ import {
 } from "./rules/battle";
 import { activatableAbilities, suggestActivationPayment } from "./rules/activate";
 import { awakenBlocker } from "./rules/awaken";
+import { counterOptions, suggestCounterPayment } from "./rules/counters";
 import { availableEnergySources, findPayment } from "./rules/energy";
 import { uniqueBlocks } from "./rules/keywords";
 import { normalPlayPayment } from "./rules/play";
@@ -106,6 +107,18 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
       case "CHOOSE_AUTO":
         for (const option of pending.options) actions.push({ type: "CHOOSE_AUTO", player, id: option.id });
         break;
+      case "COUNTER_WINDOW":
+        actions.push({ type: "PASS_COUNTER", player });
+        for (const option of counterOptions(s, player, pending.on, ctx)) {
+          actions.push({
+            type: "DECLARE_COUNTER",
+            player,
+            uid: option.uid,
+            alt: option.alt,
+            payment: suggestCounterPayment(s, player, option, ctx),
+          });
+        }
+        break;
       case "CHOOSE_OPTION":
         for (const option of pending.options) actions.push({ type: "CHOOSE_OPTION", player, id: option.id });
         break;
@@ -122,7 +135,10 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
         // (Toutes les combinaisons seraient trop nombreuses ; tout choix valide reste accepté.)
         if (pending.min === 0) actions.push({ type: "CHOOSE_CARDS", player, uids: [] });
         if (pending.min <= 1) for (const uid of pending.options) actions.push({ type: "CHOOSE_CARDS", player, uids: [uid] });
-        if (pending.max > 1) actions.push({ type: "CHOOSE_CARDS", player, uids: pending.options.slice(0, pending.max) });
+        // Avec une limite de coût total (20-6), on ne propose que les choix d'une carte.
+        if (pending.max > 1 && pending.maxTotalCost === undefined) {
+          actions.push({ type: "CHOOSE_CARDS", player, uids: pending.options.slice(0, pending.max) });
+        }
         break;
       }
       case "TAKE_DAMAGE": {

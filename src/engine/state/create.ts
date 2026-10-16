@@ -3,12 +3,17 @@ import { validateDeck } from "../cards/validate-deck";
 import type { GameEvent } from "../protocol";
 import { shuffleInPlace, type RngHolder } from "../rng";
 import { startSetup } from "../rules/setup";
-import { PLAYER_IDS, type CardInstance, type GameState, type PlayerId, type PlayerState } from "./types";
+import { PLAYER_IDS, type CardInstance, type CounterPrompt, type GameState, type PlayerId, type PlayerState } from "./types";
 
 export interface NewGameInput {
   decks: Record<PlayerId, DeckList>;
   /** Graine du hasard. Même graine + mêmes actions => même partie. */
   seed: number;
+  /**
+   * Réglage des fenêtres de contre de chaque joueur. Par défaut « always » : la partie
+   * s'arrête à chaque fenêtre de contre, pour que l'adversaire ne puisse rien deviner.
+   */
+  counterPrompt?: Partial<Record<PlayerId, CounterPrompt>>;
 }
 
 export type CreateGameResult =
@@ -69,12 +74,18 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     pending: null,
     battle: null,
     resolving: null,
+    suspended: [],
     turnUsage: {},
     autoQueue: [],
     checkpointThen: null,
     nextAutoId: 1,
     powerMods: [],
     effects: [],
+    counterWindow: null,
+    attackLimits: [],
+    settings: {
+      counterPrompt: { P1: input.counterPrompt?.P1 ?? "always", P2: input.counterPrompt?.P2 ?? "always" },
+    },
     result: null,
   };
   const events: GameEvent[] = [];

@@ -40,7 +40,8 @@ import {
 } from "../state/types";
 import { continueWith } from "./autos";
 import { drawCards, shuffleDeck } from "./basic";
-import { matchesFilter } from "./conditions";
+import { energyCostOf, matchesFilter } from "./conditions";
+import { openCounterWindow } from "./counters";
 import { checkDefeat } from "./defeat";
 import { keywordsOf, readyBlockedByEffect } from "./keywords";
 import { enterBattleArea } from "./play";
@@ -59,6 +60,8 @@ export function startResolution(
   then: Continuation,
   events: GameEvent[],
 ): void {
+  // Un effet déjà en cours (interrompu par celui-ci) est mis de côté et reprendra ensuite.
+  if (s.resolving) s.suspended.push(s.resolving);
   s.resolving = { player, source, steps: [...steps], index: 0, then, saved: {}, memo: [] };
   s.pending = null;
   continueResolution(s, ctx, events);
@@ -71,6 +74,7 @@ function continueResolution(s: GameState, ctx: GameContext, events: GameEvent[])
   const defeated = () => {
     if (!checkDefeat(s, events)) return false;
     s.resolving = null;
+    s.suspended = [];
     s.autoQueue = [];
     s.checkpointThen = null;
     return true;
@@ -82,8 +86,15 @@ function continueResolution(s: GameState, ctx: GameContext, events: GameEvent[])
     if (waiting) return; // on attend un choix du joueur (les fonctions answer* reprendront)
     r.index++;
   }
-  s.resolving = null;
+  // L'effet interrompu (s'il y en a un) redevient l'effet en cours.
+  s.resolving = s.suspended.pop() ?? null;
   continueWith(s, ctx, r.then, events);
+}
+
+/** Reprend la résolution en cours après une fenêtre de contre ouverte au milieu de l'effet. */
+export function resumeResolution(s: GameState, ctx: GameContext, events: GameEvent[]): void {
+  if (!s.resolving) return;
+  nextStep(s, ctx, events);
 }
 
 /** Passe à l'instruction suivante après un choix du joueur. */
@@ -190,6 +201,8 @@ function findCandidate(s: GameState, uid: string): Candidate | null {
 
 /** Nombre de cibles : « jusqu'à N » => 0..N (5-2-4) ; « N » => autant que possible jusqu'à N (5-2-3). */
 function targetCount(spec: Json, available: number): { min: number; max: number } {
+  // « Choisissez n'importe quel nombre de cartes » : de 0 à toutes.
+  if (spec["any_number"] === true) return { min: 0, max: available };
   if (typeof spec["up_to"] === "number") return { min: 0, max: Math.min(spec["up_to"], available) };
   const n = typeof spec["count"] === "number" ? spec["count"] : 1;
   const max = Math.min(n, available);
@@ -223,11 +236,12 @@ function askOrApply(
   count: { min: number; max: number },
   events: GameEvent[],
   looked?: { uid: string; cardId: string }[],
+  maxTotalCost?: number,
 ): boolean {
   // 5-2-6 : aucune cible possible => l'instruction est ignorée.
   if (count.max === 0 && !looked) return false;
   // Choix forcé (il faut prendre toutes les cibles possibles) : pas besoin de demander.
-  if (!looked && count.min === count.max && count.max === options.length) {
+  if (!looked && maxTotalCost === undefined && count.min === count.max && count.max === options.length) {
     return applyChoice(s, ctx, step, options, events);
   }
   const what = count.min === 0 ? `Choisissez jusqu'à ${count.max}` : `Choisissez ${count.max}`;
@@ -237,8 +251,11 @@ function askOrApply(
     min: count.min,
     max: count.max,
     options,
-    prompt: `${what} carte(s) ${PROMPTS[step.do] ?? ""}`.trim(),
+    prompt: `${what} carte(s) ${PROMPTS[step.do] ?? ""}${
+      maxTotalCost !== undefined ? ` (total des coûts d'énergie : ${maxTotalCost} ou moins)` : ""
+    }`.trim(),
     ...(looked ? { looked } : {}),
+    ...(maxTotalCost !== undefined ? { maxTotalCost } : {}),
   };
   return true;
 }
@@ -459,6 +476,11 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       const self = findCandidate(s, r.source.uid);
       return self && self.zone !== "energy" ? applyChoice(s, ctx, step, [self.uid], events) : false;
     }
+    // « La carte de Combat jouée » : celle dont la mise en jeu a ouvert la fenêtre de contre.
+    if (target === "played_battle_card") {
+      const event = s.counterWindow?.event;
+      return event?.on === "play" ? applyChoice(s, ctx, step, [event.cardUid], events) : false;
+    }
     // « La carte choisie » : mémorisée par une instruction précédente (`save_as`).
     if (typeof target === "string" && r.saved[target]) {
       const still = r.saved[target]!.filter((uid) => findCandidate(s, uid));
@@ -479,7 +501,10 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
     if (step.do === "set_rest") pool = pool.filter((c) => modeHolder(s, c).mode === "active");
     if (step.do === "set_active") pool = pool.filter((c) => modeHolder(s, c).mode === "rest" && !readyBlockedByEffect(s, c.uid));
     if (step.do === "ko") pool = pool.filter((c) => c.zone === "battle");
-    return askOrApply(s, ctx, step, r.player, pool.map((c) => c.uid), targetCount(target, pool.length), events);
+    // 20-6 : « dont le total des coûts d'énergie est de X ou moins ».
+    const maxTotal = typeof target["total_cost_at_most"] === "number" ? target["total_cost_at_most"] : undefined;
+    if (maxTotal !== undefined) pool = pool.filter((c) => energyCostOf(ctx.cards.get(c.card?.cardId ?? "")) <= maxTotal);
+    return askOrApply(s, ctx, step, r.player, pool.map((c) => c.uid), targetCount(target, pool.length), events, undefined, maxTotal);
   }
 
   switch (step.do) {
@@ -597,6 +622,37 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       return false;
     }
 
+    case "negate_attack": {
+      // 8-1-6-1 : l'attaque est annulée, le combat passe directement à sa fin.
+      if (s.battle && !s.battle.negated) {
+        s.battle.negated = true;
+        events.push({ type: "ATTACK_NEGATED" });
+      }
+      return false;
+    }
+
+    case "limit_opponent_attacks": {
+      // « Votre adversaire ne peut plus attaquer (avec ses cartes de Combat) que X fois ce tour. »
+      if (step["duration"] !== "turn" || typeof step["remaining"] !== "number") break;
+      const battleCardsOnly = step["with"] === "battle_cards";
+      s.attackLimits.push({ player: opp, remaining: step["remaining"], battleCardsOnly, untilTurn: s.turnNumber });
+      events.push({ type: "ATTACKS_LIMITED", player: opp, remaining: step["remaining"], battleCardsOnly });
+      return false;
+    }
+
+    case "counter_window_play": {
+      // Instruction interne : 22-10-3-1 — une Capacité qui joue une carte ouvre une fenêtre de
+      // [Contre : Mise en jeu] avant de se résoudre.
+      openCounterWindow(
+        s,
+        ctx,
+        { on: "play", player: r.player, cardUid: r.source.uid, cardId: r.source.cardId },
+        { kind: "run_resolution" },
+        events,
+      );
+      return true;
+    }
+
     case "flip_leader": {
       // 22-2-4 / 21-10-2 : le Leader garde son mode et reste en combat s'il y était.
       const leader = p.leader;
@@ -661,6 +717,12 @@ export function answerChoice(
     return `5-2 : choisissez entre ${pending.min} et ${pending.max} carte(s)`;
   }
   if (!chosen.every((uid) => pending.options.includes(uid))) return "5-2 : cette carte ne peut pas être choisie";
+  if (pending.maxTotalCost !== undefined) {
+    const total = chosen.reduce((sum, uid) => sum + energyCostOf(ctx.cards.get(cardIdOf(s, uid) ?? "")), 0);
+    if (total > pending.maxTotalCost) {
+      return `20-6 : le total des coûts d'énergie choisis (${total}) dépasse ${pending.maxTotalCost}`;
+    }
+  }
   s.pending = null;
   const waiting = applyChoice(s, ctx, r.steps[r.index]!, chosen, events);
   if (waiting) return null;

@@ -19,6 +19,7 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   s.turnUsage = {};
   s.powerMods = s.powerMods.filter((m) => m.until !== "turn");
   s.effects = s.effects.filter((e) => e.untilTurn >= turnNumber);
+  s.attackLimits = s.attackLimits.filter((l) => l.untilTurn >= turnNumber);
   events.push({ type: "TURN_STARTED", player, turnNumber });
 
   // 7-2-2 à 7-2-5 : effets « pour tout le tour », fin des effets « jusqu'au début du tour

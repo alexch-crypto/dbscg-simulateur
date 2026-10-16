@@ -112,6 +112,18 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
     }
     case "CHOOSE_BLIND":
       return a.indices.length === 0 ? "Ne rien choisir" : `Choisir ${a.indices.length} carte(s) au hasard dans la main adverse`;
+    case "PASS_COUNTER":
+      return "Ne pas contrer";
+    case "DECLARE_COUNTER": {
+      const card = findVisible(view, a.uid);
+      const name = card ? cardName(db, card.cardId) : a.uid;
+      const cost = a.alt
+        ? " — coût alternatif (sans énergie)"
+        : a.payment.energy.length || a.payment.markers
+          ? paymentText(view, db, a.payment.energy, a.payment.markers)
+          : " — sans coût d'énergie";
+      return `Contrer avec ${name}${cost}`;
+    }
     case "CHOOSE_OPTION": {
       const option = view.pending?.type === "CHOOSE_OPTION" ? view.pending.options.find((o) => o.id === a.id) : undefined;
       return option?.label ?? a.id;
@@ -160,6 +172,12 @@ export function describePending(p: PendingDecision | null): string {
       return p.prompt;
     case "CHOOSE_AUTO":
       return "Plusieurs de vos capacités [Auto.] se déclenchent : choisissez laquelle résoudre en premier.";
+    case "COUNTER_WINDOW":
+      return p.on === "play"
+        ? "Fenêtre de contre : votre adversaire joue une carte. Voulez-vous activer un [Contre : Mise en jeu] ?"
+        : p.on === "attack"
+          ? "Fenêtre de contre : votre adversaire attaque. Voulez-vous activer un [Contre : Attaque] ?"
+          : "Fenêtre de contre : votre adversaire a activé un [Contre]. Voulez-vous le contrer ?";
   }
 }
 
@@ -206,8 +224,22 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `${e.player} : ${phaseName(e.phase)}.`;
     case "TURN_ENDED":
       return `${e.player} termine son tour.`;
+    case "PLAY_DECLARED":
+      return `${e.player} déclare jouer ${cardName(db, e.cardId)}.`;
     case "CARD_PLAYED":
-      return `${e.player} joue ${cardName(db, e.cardId)}.`;
+      return `${cardName(db, e.cardId)} (${e.player}) arrive en Zone de Combat.`;
+    case "COUNTER_WINDOW_OPENED":
+      return `Fenêtre de contre pour ${e.player}.`;
+    case "COUNTER_WINDOW_CLOSED":
+      return "Fenêtre de contre terminée.";
+    case "COUNTER_DECLARED":
+      return `${e.player} active le [Contre] de ${cardName(db, e.cardId)} !`;
+    case "COUNTER_RESOLVING":
+      return `Résolution du [Contre] de ${cardName(db, e.cardId)}.`;
+    case "ATTACK_NEGATED":
+      return "L'attaque est annulée.";
+    case "ATTACKS_LIMITED":
+      return `${e.player} ne peut plus attaquer ${e.battleCardsOnly ? "avec ses cartes de Combat " : ""}que ${e.remaining} fois ce tour.`;
     case "ATTACK_DECLARED":
       return `${e.player} attaque ${n(e.target)} avec ${n(e.attacker)} !`;
     case "BLOCKER_DECLARED":

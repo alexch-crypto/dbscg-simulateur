@@ -53,6 +53,12 @@ export interface PlayerView {
   pending: GameState["pending"];
   /** Combat en cours (information publique). */
   battle: GameState["battle"];
+  /** Fenêtre de contre en cours : événement et contres déclarés (publics : les cartes sont révélées). */
+  counterWindow: GameState["counterWindow"];
+  /** Limites d'attaques en cours. */
+  attackLimits: GameState["attackLimits"];
+  /** Réglages des joueurs. */
+  settings: GameState["settings"];
   result: GameState["result"];
   players: Record<PlayerId, PlayerZonesView>;
 }
@@ -106,6 +112,9 @@ export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
     phase: state.phase,
     pending: pendingFor(state, viewer),
     battle: state.battle ? structuredClone(state.battle) : null,
+    counterWindow: state.counterWindow ? structuredClone(state.counterWindow) : null,
+    attackLimits: structuredClone(state.attackLimits),
+    settings: structuredClone(state.settings),
     result: state.result,
     players,
   };

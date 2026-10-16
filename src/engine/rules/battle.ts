@@ -10,6 +10,7 @@ import { opponentOf, type CardInstance, type CardRef, type GameState, type Playe
 import { checkDefeat } from "./defeat";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
 import { checkpoint, queueTriggers } from "./autos";
+import { openCounterWindow } from "./counters";
 import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
 import { payEnergy } from "./play";
 import { forgetCard, koBattleCard } from "./zones";
@@ -66,9 +67,13 @@ export function possibleAttackers(s: GameState, player: PlayerId): string[] {
   // 7-3-4-4-1 : le premier joueur ne peut pas attaquer lors de son premier tour.
   if (s.turnNumber === 1 && player === s.firstPlayer) return [];
   const p = s.players[player];
+  // Effets « ne peut plus attaquer que X fois ce tour ».
+  const limits = s.attackLimits.filter((l) => l.player === player && l.untilTurn >= s.turnNumber);
+  const leaderBlocked = limits.some((l) => !l.battleCardsOnly && l.remaining <= 0);
+  const battleBlocked = limits.some((l) => l.remaining <= 0);
   return [
-    ...(p.leader.mode === "active" ? [p.leader.uid] : []),
-    ...p.battle.filter((c) => c.mode === "active").map((c) => c.uid),
+    ...(p.leader.mode === "active" && !leaderBlocked ? [p.leader.uid] : []),
+    ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active").map((c) => c.uid)),
   ];
 }
 
@@ -104,7 +109,9 @@ export function declareAttack(
   }
   const attacker = findInPlay(s, player, action.attacker);
   if (!attacker) return "8-1-1 : l'attaquant doit être votre Leader ou une de vos cartes de Combat";
-  if (!possibleAttackers(s, player).includes(action.attacker)) return "8-1-1 : l'attaquant doit être en mode Action";
+  if (!possibleAttackers(s, player).includes(action.attacker)) {
+    return "8-1-1 : l'attaquant doit être en mode Action (et ne pas être bloqué par un effet qui limite les attaques)";
+  }
   const defenderPlayer = opponentOf(player);
   const target = findInPlay(s, defenderPlayer, action.target);
   if (!target) return "8-1-1 : la cible doit être le Leader adverse ou une carte de Combat adverse";
@@ -115,6 +122,10 @@ export function declareAttack(
   // 8-1-1 : passer l'attaquant du mode Action au mode Inertie. 8-1-2 : un combat se lance.
   if (attacker.kind === "leader") s.players[player].leader.mode = "rest";
   else attacker.card.mode = "rest";
+  // Une attaque de plus est utilisée pour chaque limite qui la concerne.
+  for (const l of s.attackLimits) {
+    if (l.player === player && (!l.battleCardsOnly || attacker.kind === "battle")) l.remaining--;
+  }
   const targetRef = { player: defenderPlayer, uid: action.target };
   const attackerRef = { player, uid: action.attacker };
   s.battle = { attacker: attackerRef, defender: targetRef, target: targetRef, step: "attack_declared", pendingAutos: [] };
@@ -127,17 +138,29 @@ export function declareAttack(
   if ((s.turnUsage[usageKey] ?? 0) < readyAfterBattleCount(s, attackerRef, ctx.cards)) {
     s.battle.pendingAutos.push({ kind: "dual_attack", card: attackerRef, usageKey });
   }
-  // Ordre (décision du joueur, conforme à 8-1-3 / 8-1-5) : fenêtre de contre (à venir), puis
-  // les [Auto.] « quand cette carte attaque » (joueur actif) et « quand cette carte est
-  // attaquée » (joueur non actif), puis seulement le blocage.
+  // Ordre (8-1-3 à 8-1-6, confirmé par le joueur) : les [Auto.] « quand cette carte attaque /
+  // est attaquée » se mettent en suspens ; fenêtre de contre ; point de contrôle (elles se
+  // résolvent, même si l'attaque a été annulée) ; puis le blocage.
   queueTriggers(s, { event: "attacks", ref: attackerRef }, ctx, events);
   queueTriggers(s, { event: "attacked", ref: targetRef }, ctx, events);
-  checkpoint(s, ctx, { kind: "blocker_step" }, events);
+  s.pending = null;
+  openCounterWindow(
+    s,
+    ctx,
+    { on: "attack", player, attacker: attackerRef, byBattleCard: attacker.kind === "battle" },
+    { kind: "attack_checkpoint" },
+    events,
+  );
   return null;
 }
 
 /** 22-4 : étape de blocage — le défenseur choisit au plus un Bloqueur, s'il en a. */
 export function startBlockerStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
+  // 8-1-6-1 : si l'attaque a été annulée, on passe directement à l'étape de Fin de Combat.
+  if (s.battle!.negated) {
+    battleEndStep(s, events);
+    return;
+  }
   if (possibleBlockers(s, ctx).length > 0) {
     s.pending = { type: "BLOCKER", player: s.battle!.target.player };
   } else {

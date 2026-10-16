@@ -16,8 +16,10 @@ import { opponentOf, type CardInstance, type CardRef, type Continuation, type Ga
 import { battleEndStep, startBlockerStep } from "./battle";
 import { checkConditions, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
-import { startResolution } from "./effects";
+import { afterCounterLink } from "./counters";
+import { resumeResolution, startResolution } from "./effects";
 import { isNegated } from "./keywords";
+import { finishPlay } from "./play";
 
 // ---------------------------------------------------------------------------
 // Déclencheurs
@@ -85,8 +87,11 @@ export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, 
   } else {
     // La carte peut déjà avoir changé de zone (ex. mise KO) : on lit ses Capacités sur sa définition.
     // 9-6-9-1-2 : son maître est celui de la Zone de Combat qu'elle quitte (ici, son propriétaire).
+    // Une carte dont les Capacités sont annulées (ex. par un [Contre : Mise en jeu]) ne déclenche rien.
     const card = trigger.card;
-    source = { uid: card.uid, cardId: card.cardId, player: card.owner, abilities: abilitiesOf(ctx.cards, ctx.cards.get(card.cardId)) };
+    source = isNegated(s, card.uid)
+      ? null
+      : { uid: card.uid, cardId: card.cardId, player: card.owner, abilities: abilitiesOf(ctx.cards, ctx.cards.get(card.cardId)) };
   }
   if (source) {
     source.abilities.forEach((ability, index) => {
@@ -214,6 +219,19 @@ export function continueWith(s: GameState, ctx: GameContext, then: Continuation,
       return;
     case "battle_end_step":
       battleEndStep(s, events);
+      return;
+    case "finish_play":
+      finishPlay(s, ctx, then.player, then.uid, events);
+      return;
+    case "run_resolution":
+      resumeResolution(s, ctx, events);
+      return;
+    case "attack_checkpoint":
+      // 8-1-5 : point de contrôle (les [Auto.] « quand cette carte attaque »), puis 8-1-6.
+      checkpoint(s, ctx, { kind: "blocker_step" }, events);
+      return;
+    case "counter_chain":
+      afterCounterLink(s, ctx, events);
       return;
   }
 }
