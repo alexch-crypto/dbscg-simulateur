@@ -354,21 +354,30 @@ interface RenderInfo {
   pickable: Set<string>;
 }
 
+/** Texte d'aide au survol : nom complet et capacités. */
+function hoverText(def: CardDefinition | undefined, cardId: string): string {
+  if (!def) return cardId;
+  const texts = def.abilities.map((a) => String(a["text"] ?? "")).filter(Boolean);
+  return [`${def.name} (${cardId})`, ...texts].join("\n\n");
+}
+
 /**
- * Une carte. `position` (ex. « life:P1:3 ») sert quand on choisit des cartes par leur place
- * (Vie, main adverse à l'aveugle) ; sinon la carte est identifiée par son uid.
+ * Une carte en miniature. `position` (ex. « life:P1:3 ») sert quand on choisit des cartes par
+ * leur place (Vie, main adverse à l'aveugle) ; sinon la carte est identifiée par son uid.
+ * Le détail complet (avec le texte des capacités) s'affiche à droite quand on la sélectionne.
  */
 function cardBox(c: CardView, info: RenderInfo, position?: string): string {
   if (!isVisible(c)) {
     // Carte cachée (main adverse, Vie) : elle peut quand même être cochée par position.
     const id = position ?? "";
-    const classes = ["card", "hidden-card", info.pickable.has(id) ? "pickable" : "", picked.has(id) ? "picked" : ""];
+    const classes = ["card", "mini", "hidden-card", info.pickable.has(id) ? "pickable" : "", picked.has(id) ? "picked" : ""];
     return `<div class="${classes.join(" ")}" ${id ? `data-slot="${esc(id)}"` : ""}>?</div>`;
   }
   const def = db.get(c.cardId);
   const id = position && info.pickable.has(position) ? position : c.uid;
   const classes = [
     "card",
+    "mini",
     c.mode === "rest" ? "rest" : "",
     info.actionable.has(c.uid) ? "actionable" : "",
     info.pickable.has(id) ? "pickable" : "",
@@ -376,16 +385,13 @@ function cardBox(c: CardView, info: RenderInfo, position?: string): string {
     selectedCard === c.uid ? "selected" : "",
     selectedEnergy.has(c.uid) ? "paying" : "",
   ];
-  const keywords = def?.keywords.map((k) => KEYWORD_NAMES[k.id]).filter((k): k is string => k !== undefined) ?? [];
+  const cost = def?.cost ? `${def.cost.total}` : "";
+  const power = def?.power !== undefined ? `${def.power / 1000}k` : def?.type === "extra" ? "Extra" : "";
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" title="${esc(c.cardId)}">
-      <div class="card-name">${colorDots(def?.colors ?? [])} ${esc(def?.name ?? c.cardId)}</div>
-      ${def ? `<div class="card-line">${esc(costText(def))}</div>` : ""}
-      ${def?.power !== undefined ? `<div class="card-line"><b>${def.power}</b></div>` : ""}
-      ${def?.combo ? `<div class="card-line">Combo +${def.combo.power} (${def.combo.cost})</div>` : ""}
-      ${keywords.length ? `<div class="card-line kw">${keywords.join(", ")}</div>` : ""}
-      ${def && def.type !== "battle" ? `<div class="card-line kw">${esc(def.type)}</div>` : ""}
-      ${selectedEnergy.has(c.uid) ? `<div class="card-mode">payée</div>` : ""}
+    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" title="${esc(hoverText(def, c.cardId))}">
+      <div class="mini-top">${colorDots(def?.colors ?? [])}<span class="mini-cost">${cost}</span></div>
+      <div class="mini-name">${esc(def?.name ?? c.cardId)}</div>
+      <div class="mini-power">${power}${def?.combo ? ` <span class="mini-combo">+${def.combo.power / 1000}k</span>` : ""}</div>
     </div>`;
 }
 
@@ -394,6 +400,7 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
   const face = leader.side === "front" ? def?.front : def?.back;
   const classes = [
     "card",
+    "mini",
     "leader",
     leader.mode === "rest" ? "rest" : "",
     info.actionable.has(leader.uid) ? "actionable" : "",
@@ -401,50 +408,80 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
     picked.has(leader.uid) ? "picked" : "",
     selectedCard === leader.uid ? "selected" : "",
   ];
+  const texts = face?.abilities.map((a) => String(a["text"] ?? "")).filter(Boolean) ?? [];
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}">
-      <div class="card-name">${colorDots(face?.colors ?? [])} ${esc(face?.name ?? leader.cardId)}</div>
-      <div class="card-line">Leader — ${leader.side === "front" ? "face avant" : "éveillé"}</div>
-      <div class="card-line"><b>${face?.power ?? "?"}</b></div>
+    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" title="${esc(
+      [face?.name ?? "", ...texts].join("\n\n"),
+    )}">
+      <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
+      <div class="mini-name">${esc(face?.name ?? leader.cardId)}</div>
+      <div class="mini-power">${(face?.power ?? 0) / 1000}k</div>
     </div>`;
 }
 
-function zone(title: string, cards: readonly CardView[], info: RenderInfo, slotPrefix?: string): string {
+/** Une zone sur UNE ligne : si elle déborde, elle défile horizontalement. */
+function zone(title: string, cards: readonly CardView[], info: RenderInfo, slotPrefix?: string, extraClass = ""): string {
   const content =
     cards.length > 0
       ? cards.map((c, i) => cardBox(c, info, slotPrefix ? `${slotPrefix}:${i}` : undefined)).join("")
-      : `<span class="empty">vide</span>`;
-  return `<div class="zone"><div class="zone-title">${title} (${cards.length})</div><div class="cards">${content}</div></div>`;
+      : `<span class="empty">—</span>`;
+  return `<div class="zone ${extraClass}"><div class="zone-title">${title} (${cards.length})</div><div class="cards strip">${content}</div></div>`;
 }
 
 function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string {
-  const dropNames = p.drop.map((c) => (isVisible(c) ? cardName(db, c.cardId) : "?"));
   const deciding = state?.pending?.player === p.id;
-  const handZone = zone("Main", p.hand, info, `hand:${p.id}`);
-  const parts = [
-    `<h2>${p.id}${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}</h2>`,
-    `<div class="row">
+  const head = `<div class="pl-head">
+      <b>${p.id}</b>${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}
+      <span class="counter">Deck <b>${p.deckCount}</b></span>
+      <span class="counter">Main <b>${p.hand.length}</b></span>
+      <span class="counter">Marqueurs <b>${p.energyMarkers}</b></span>
+      <span class="counter" title="${esc(p.drop.map((c) => (isVisible(c) ? cardName(db, c.cardId) : "?")).join(", "))}">Dispersion <b>${p.drop.length}</b></span>
+      <span class="counter">Dim. parallèle <b>${p.warp.length}</b></span>
+      ${p.removed.length ? `<span class="counter">Retirées <b>${p.removed.length}</b></span>` : ""}
+    </div>`;
+  const field = `<div class="pl-row">
       <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader, info)}</div></div>
-      <div class="zone counters">
-        <div>Deck : <b>${p.deckCount}</b></div>
-        <div>Vie : <b>${p.life.length}</b></div>
-        <div>Main : <b>${p.hand.length}</b></div>
-        <div>Marqueurs Énergie : <b>${p.energyMarkers}</b></div>
-        <div>Dispersion : <b>${p.drop.length}</b> · Dim. parallèle : <b>${p.warp.length}</b></div>
-      </div>
-      ${zone("Vie", p.life, info, `life:${p.id}`)}
-    </div>`,
-    zone("Zone de Combat", p.battle, info),
-    `<div class="row">${zone("Énergie", p.energy, info)}${p.combo.length > 0 ? zone("Combo", p.combo, info) : ""}${
-      p.zEnergy.length > 0 ? zone("Énergie Z", p.zEnergy, info) : ""
-    }</div>`,
-    handZone,
-    dropNames.length > 0 ? `<div class="drop">Dispersion : ${esc(dropNames.join(", "))}</div>` : "",
-    p.removed.length > 0 ? `<div class="drop">Retirées de la partie : ${esc(p.removed.map((c) => cardName(db, c.cardId)).join(", "))}</div>` : "",
-  ];
-  // En haut de l'écran, on affiche la main en premier (plus près du bord), comme sur une table.
-  const ordered = top ? [parts[0], parts[4], parts[3], parts[2], parts[1], parts[5], parts[6]] : parts;
-  return `<section class="player ${deciding ? "deciding" : ""}">${ordered.join("")}</section>`;
+      ${zone("Vie", p.life, info, `life:${p.id}`, "life")}
+      ${zone("Énergie", p.energy, info, undefined, "grow")}
+      ${p.combo.length > 0 ? zone("Combo", p.combo, info) : ""}
+      ${p.zEnergy.length > 0 ? zone("Énergie Z", p.zEnergy, info) : ""}
+    </div>`;
+  const battle = `<div class="pl-row">${zone("Zone de Combat", p.battle, info, undefined, "grow")}</div>`;
+  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}</div>`;
+  // Disposition comme sur une table : la main au bord, la Zone de Combat vers le centre.
+  const rows = top ? [head, hand, field, battle] : [head, battle, field, hand];
+  return `<section class="player ${deciding ? "deciding" : ""}">${rows.join("")}</section>`;
+}
+
+/** Fiche détaillée de la carte sélectionnée (avec le texte de ses capacités). */
+function cardDetail(view: PlayerView): string {
+  if (!selectedCard) return "";
+  let def: CardDefinition | undefined;
+  let face: { name: string; colors: readonly string[]; power?: number; abilities: Record<string, unknown>[] } | undefined;
+  for (const p of Object.values(view.players)) {
+    if (p.leader.uid === selectedCard) {
+      def = db.get(p.leader.cardId);
+      face = p.leader.side === "front" ? def?.front : def?.back;
+    }
+    for (const z of [p.hand, p.battle, p.energy, p.combo, p.zEnergy]) {
+      const c = z.find((x) => isVisible(x) && x.uid === selectedCard);
+      if (c && isVisible(c)) {
+        def = db.get(c.cardId);
+        face = def;
+      }
+    }
+  }
+  if (!def || !face) return "";
+  const keywords = def.keywords.map((k) => KEYWORD_NAMES[k.id] ?? k.id);
+  const texts = face.abilities.map((a) => String(a["text"] ?? "")).filter(Boolean);
+  return `<div class="detail">
+    <div class="card-name">${colorDots(face.colors)} ${esc(face.name)} <span class="hint">${esc(def.id)}</span></div>
+    <div class="card-line">${esc(def.type)}${def.cost ? ` · ${esc(costText(def))}` : ""}${face.power !== undefined ? ` · <b>${face.power}</b>` : ""}${
+      def.combo ? ` · Combo +${def.combo.power} (coût ${def.combo.cost})` : ""
+    }</div>
+    ${keywords.length ? `<div class="card-line kw">${esc(keywords.join(", "))}</div>` : ""}
+    ${texts.map((x) => `<div class="ability">${esc(x)}</div>`).join("")}
+  </div>`;
 }
 
 function counterSummary(view: PlayerView): string {
@@ -568,7 +605,7 @@ function render(): void {
         ${playerArea(view.players[bottom], info, false)}
       </div>
       <aside>
-        <div class="actions">${actionsPanel(view, info)}</div>
+        <div class="actions">${cardDetail(view)}${actionsPanel(view, info)}</div>
         <div class="log ${logHidden ? "collapsed" : ""}">
           <h3>Journal <button data-toggle-log>${logHidden ? "Afficher" : "Masquer"}</button></h3>
           ${
