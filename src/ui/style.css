@@ -50,7 +50,9 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .drop { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .battle { background: #fff4e5; border: 1px solid #f0b46b; border-radius: 8px; padding: 8px; margin-bottom: 10px; }
 .result { background: #e8f5e9; border: 1px solid #66bb6a; padding: 10px 16px; font-size: 16px; }
-aside { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 8px; align-self: start; max-height: calc(100vh - 16px); }
+/* Colonne de droite : hauteur de l'écran ; le panneau d'actions est prioritaire, le journal
+   prend seulement la place restante et défile tout seul. */
+aside { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 8px; align-self: start; height: calc(100vh - 16px); }
 .player { padding: 8px; margin-bottom: 8px; }
 .zone { margin: 4px 0; }
 .row { align-items: flex-start; }
@@ -68,8 +70,11 @@ button.danger { color: var(--error); }
 .header-buttons button, .file-button { padding: 4px 8px; }
 .file-button { font: inherit; cursor: pointer; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
 .file-button:hover { border-color: var(--accent); }
-.actions { overflow-y: auto; max-height: 55vh; }
-.log { flex: 1; min-height: 120px; overflow-y: auto; font-size: 12px; }
+.actions { flex: 0 1 auto; overflow-y: auto; max-height: 70vh; }
+.log { flex: 1 1 0; min-height: 0; overflow-y: auto; font-size: 12px; }
+.log.collapsed { flex: 0 0 auto; }
+.log h3 { display: flex; justify-content: space-between; align-items: center; margin-top: 0; }
+.log h3 button { font-size: 11px; text-transform: none; padding: 2px 6px; }
 .log div { padding: 2px 0; border-bottom: 1px solid #eee; }
 .pass-screen { max-width: 520px; margin: 15vh auto; text-align: center; background: var(--panel); padding: 32px; border-radius: 12px; border: 1px solid var(--border); }
 .pass-screen button { font-size: 16px; padding: 10px 20px; }

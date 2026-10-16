@@ -61,6 +61,14 @@ const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "only_if_playable",
 let screenOwner: PlayerId = "P1";
 let revealed = false;
 let errorMessage = "";
+/** Journal masqué (préférence mémorisée dans le navigateur). */
+let logHidden = (() => {
+  try {
+    return localStorage.getItem("dbscg.logHidden") === "1";
+  } catch {
+    return false;
+  }
+})();
 
 /** Carte sélectionnée (ses actions sont affichées dans le panneau). */
 let selectedCard: string | null = null;
@@ -561,11 +569,18 @@ function render(): void {
       </div>
       <aside>
         <div class="actions">${actionsPanel(view, info)}</div>
-        <div class="log"><h3>Journal</h3>${log
-          .slice(-80)
-          .reverse()
-          .map((line) => `<div class="${line.startsWith("⚠") ? "warn" : ""}">${esc(line)}</div>`)
-          .join("")}</div>
+        <div class="log ${logHidden ? "collapsed" : ""}">
+          <h3>Journal <button data-toggle-log>${logHidden ? "Afficher" : "Masquer"}</button></h3>
+          ${
+            logHidden
+              ? ""
+              : log
+                  .slice(-80)
+                  .reverse()
+                  .map((line) => `<div class="${line.startsWith("⚠") ? "warn" : ""}">${esc(line)}</div>`)
+                  .join("")
+          }
+        </div>
       </aside>
     </main>`;
   // Quand il faut choisir des cartes, on les amène à l'écran.
@@ -581,9 +596,18 @@ function render(): void {
 app.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot]",
+    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log]",
   );
   if (!el) return;
+  if (el.dataset["toggleLog"] !== undefined) {
+    logHidden = !logHidden;
+    try {
+      localStorage.setItem("dbscg.logHidden", logHidden ? "1" : "0");
+    } catch {
+      // Stockage indisponible : la préférence ne sera simplement pas mémorisée.
+    }
+    return render();
+  }
   if (el.dataset["action"] !== undefined) return act(currentActions[Number(el.dataset["action"])]!);
   if (el.dataset["validate"] !== undefined) {
     const action = pickedAction(currentView());
