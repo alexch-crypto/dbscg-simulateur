@@ -122,7 +122,7 @@ export type GameEvent =
       player: PlayerId;
       uid: string;
       cardId: string;
-      from: "hand" | "battle";
+      from: "hand" | "battle" | "drop";
       energyRested: string[];
       markersUsed: number;
     }
@@ -144,7 +144,7 @@ export type GameEvent =
   | { type: "AWAKEN_ACTIVATED"; player: PlayerId }
   | { type: "LEADER_FLIPPED"; player: PlayerId; side: "front" | "back" }
   /** Carte jouée via une Capacité (5-5-3), sans payer son coût. */
-  | { type: "CARD_PLAYED_BY_SKILL"; player: PlayerId; uid: string; cardId: string; from: "hand" | "drop"; mode: "active" | "rest" }
+  | { type: "CARD_PLAYED_BY_SKILL"; player: PlayerId; uid: string; cardId: string; from: "hand" | "drop"; mode: "active" | "rest"; into?: PlayerId }
   /** Capacité [Activation] activée (9-4) : la carte est révélée si elle était en main. */
   | { type: "ABILITY_ACTIVATED"; player: PlayerId; uid: string; cardId: string; index: number; text: string }
   | { type: "CARDS_LOCKED"; uids: string[] }
@@ -179,6 +179,14 @@ export type GameEvent =
   | { type: "AUTO_CANCELLED"; player: PlayerId; cardId: string; reason: string }
   /** Une partie d'effet que le moteur ne sait pas encore faire a été ignorée. */
   | { type: "NOT_IMPLEMENTED"; player: PlayerId; cardId: string; what: string }
+  /** Effet appliqué qui n'a pas d'événement propre (restriction, taxe d'attaque...), décrit en clair. */
+  | { type: "EFFECT_NOTE"; player: PlayerId; cardId: string; text: string }
+  /** 19 : un jeton est créé dans la Zone de Combat de `player`. */
+  | { type: "TOKEN_CREATED"; player: PlayerId; uid: string; cardId: string }
+  /** « La puissance de cette carte devient X ». */
+  | { type: "POWER_SET"; uid: string; value: number }
+  /** 21-16 : une carte passe en mode Révélé. */
+  | { type: "CARD_REVEALED_MODE"; uid: string }
   | { type: "CARDS_MODE_CHANGED"; uids: string[]; mode: "active" | "rest" }
   | { type: "POWER_MODIFIED"; uid: string; amount: number; until: "turn" | "battle" }
   /** Cartes de Vie rajoutées à la main par un effet (cardIds connus seulement si face visible). */

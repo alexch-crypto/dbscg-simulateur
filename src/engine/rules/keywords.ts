@@ -78,10 +78,11 @@ export function readyAfterBattleCount(s: GameState, ref: CardRef, db: CardDataba
 /**
  * Une carte quitte la Zone de Combat / Unisson / de Combo. Elle est retirée de la partie au lieu
  * d'aller dans sa zone de destination si c'est une carte Z (14-1-4) ou une carte [Ultimate]
- * (22-14-3). Renvoie true si elle a été retirée.
+ * (22-14-3). Un jeton cesse d'exister (19-1-7). Renvoie true si elle a été retirée.
  */
 export function removeIfUltimate(s: GameState, card: CardInstance, db: CardDatabase): boolean {
   const def = db.get(card.cardId);
+  if (def?.token) return true;
   if (!cardHasKeyword(def, KW.ultimate) && !def?.type.startsWith("z_")) return false;
   delete card.markers;
   card.mode = "active";

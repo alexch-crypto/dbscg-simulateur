@@ -74,11 +74,16 @@ export function counterOptions(s: GameState, player: PlayerId, on: CounterOn, ct
   if (!window) return [];
   const sources = availableEnergySources(s, player, ctx.cards);
   const result: CounterOption[] = [];
+  // « Vous ne pouvez pas activer les Capacités [Contre : Mise en jeu] des autres cartes ce tour. »
+  const onlyPlayCounterOf = s.restrictions
+    .filter((r) => r.player === player && r.rule === "no_other_counter_play" && r.fromTurn <= s.turnNumber && s.turnNumber <= r.untilTurn)
+    .map((r) => r.uid);
   for (const card of s.players[player].hand) {
     const def = ctx.cards.get(card.cardId);
     const abilities = abilitiesOf(ctx.cards, def);
     for (const ability of abilities) {
       if (ability["kind"] !== "counter" || !matches(ability, on, window.event, ctx)) continue;
+      if (ability["counter_on"] === "play" && onlyPlayCounterOf.some((uid) => uid !== card.uid)) continue;
       if (checkConditions(s, player, ability["condition"], ctx.cards) !== true) continue;
       const cost = parseCost(ability["cost"]);
       if (!cost) continue;

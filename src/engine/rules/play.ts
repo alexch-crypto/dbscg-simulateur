@@ -97,6 +97,8 @@ export function enterBattleArea(
   mode: "active" | "rest",
   events: GameEvent[],
   via?: string,
+  /** Joueur dans la Zone de Combat duquel la carte est jouée (par défaut, `player`). */
+  into: PlayerId = player,
 ): string | null {
   const def = ctx.cards.get(card.cardId);
   if (def?.type !== "battle") return "seules les cartes de Combat peuvent être jouées ainsi pour l'instant";
@@ -106,8 +108,8 @@ export function enterBattleArea(
   zone.splice(zone.indexOf(card), 1);
   card.mode = mode;
   card.faceUp = true;
-  s.players[player].battle.push(card);
-  events.push({ type: "CARD_PLAYED_BY_SKILL", player, uid: card.uid, cardId: card.cardId, from, mode });
+  s.players[into].battle.push(card);
+  events.push({ type: "CARD_PLAYED_BY_SKILL", player, uid: card.uid, cardId: card.cardId, from, mode, ...(into !== player ? { into } : {}) });
   // 22-15-6 : jouée via [Espace-temps] => en Dimension parallèle à la fin du tour.
   if (via === "over_realm") s.effects.push({ uid: card.uid, kind: "warp_at_end_of_turn", untilTurn: s.turnNumber });
   queueTriggers(s, { event: "played", card, ...(via ? { via } : {}) }, ctx, events);

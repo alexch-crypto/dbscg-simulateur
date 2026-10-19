@@ -307,11 +307,15 @@ describe("« Vous pouvez... Si vous le faites... » (20-16)", () => {
 
 describe("Robustesse : parties au hasard avec toutes les nouvelles capacités", () => {
   it("tous les coups proposés sont acceptés et aucune carte ne disparaît (40 parties)", () => {
-    const allCards = (s: GameState, p: PlayerId) => {
-      const z = s.players[p];
-      // Deck principal (53) + deck Z (9), où qu'elles soient (le Leader Z est posé sur le Leader).
-      return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [z.leader.z] : [])];
-    };
+    // Deck principal (53) + deck Z (9) de `p`, où qu'elles soient (le Leader Z est posé sur le
+    // Leader, Krillin peut être joué chez l'adversaire) ; les jetons ne sont pas comptés.
+    const allCards = (s: GameState, p: PlayerId) =>
+      (["P1", "P2"] as const)
+        .flatMap((q) => {
+          const z = s.players[q];
+          return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [{ ...z.leader.z, owner: q }] : [])];
+        })
+        .filter((c) => c.owner === p && !ctx.cards.get(c.cardId)?.token);
     for (let seed = 200; seed < 240; seed++) {
       let s = play(p2Main(seed), { type: "END_MAIN_PHASE", player: "P2" }).state;
       let x = seed;

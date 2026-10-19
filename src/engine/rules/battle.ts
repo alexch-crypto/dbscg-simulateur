@@ -1,15 +1,15 @@
 // Attaques et combats (manuel, section 8), Combos (5-6, 5-7), dégâts (21-3), KO (5-12),
 // mots-clés de combat : [Bloqueur] (22-4), [Coup Critique] (22-6), [Frappe] (22-7),
-// [Réplique] / [Tri-offensive] (22-8), [Ultimate] (22-14).
-// Non géré pour l'instant : fenêtres de contre (8-1-4), autres capacités [Auto.] « quand cette
-// carte attaque / est attaquée », Unissons (pas d'étape de Défense, 8-2-4-3-1-1).
+// [Réplique] / [Tri-offensive] (22-8), [Ultimate] (22-14), taxes d'attaque (« à moins de ... »),
+// effets retardés du combat.
 
 import type { CardDefinition } from "../cards/types";
 import type { Action, GameContext, GameEvent } from "../protocol";
-import { opponentOf, type CardInstance, type CardRef, type GameState, type PlayerId } from "../state/types";
+import { opponentOf, type CardInstance, type CardRef, type EffectStep, type GameState, type PlayerId } from "../state/types";
 import { checkDefeat } from "./defeat";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
-import { checkpoint, queueTriggers } from "./autos";
+import { checkpoint, enqueueSteps, queueTriggers } from "./autos";
+import { startResolution } from "./effects";
 import { openCounterWindow } from "./counters";
 import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
 import { comboCostChange } from "./permanents";
@@ -55,7 +55,11 @@ export function powerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
   } else {
     base = ctx.cards.get(found.card.cardId)?.power ?? 0;
   }
-  // 9-9-1 : on part de la valeur imprimée, puis on applique les effets continus chiffrés.
+  // 9-9-1 : on part de la valeur imprimée (ou de celle fixée par un effet, « devient X »),
+  // puis on applique les effets continus chiffrés.
+  const set = s.effects.filter((e) => e.uid === ref.uid && e.kind === "set_power");
+  const last = set[set.length - 1];
+  if (last && last.kind === "set_power") base = last.value;
   return base + s.powerMods.filter((m) => m.uid === ref.uid).reduce((total, m) => total + m.amount, 0);
 }
 
@@ -89,7 +93,30 @@ export function possibleAttackers(s: GameState, player: PlayerId, ctx: GameConte
     ...(p.leader.mode === "active" && !leaderBlocked ? [p.leader.uid] : []),
     ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active" && isBattleCard(c, ctx)).map((c) => c.uid)),
     ...(leaderBlocked ? [] : p.unison.filter((c) => c.mode === "active" && !cannotAttack(s, player, c, ctx)).map((c) => c.uid)),
-  ];
+  ].filter((uid) => attackTaxPayable(s, player, uid, ctx));
+}
+
+/** Coûts supplémentaires d'attaque en cours pour `player` (« à moins de ... à chaque fois »). */
+function attackTaxes(s: GameState, player: PlayerId) {
+  return s.attackTaxes.filter((t) => t.player === player && t.untilTurn >= s.turnNumber);
+}
+
+/** Cartes en mode Action de `player` (Leader, Combat, Unisson, Énergie), sauf `except`. */
+function activeCards(s: GameState, player: PlayerId, except: string, ctx: GameContext): string[] {
+  const p = s.players[player];
+  const cards = [...p.battle.filter((c) => isBattleCard(c, ctx)), ...p.unison, ...p.energy];
+  return [...(p.leader.mode === "active" ? [p.leader.uid] : []), ...cards.filter((c) => c.mode === "active").map((c) => c.uid)].filter(
+    (uid) => uid !== except,
+  );
+}
+
+/** Les taxes d'attaque peuvent-elles être payées pour une attaque de `attacker` ? */
+function attackTaxPayable(s: GameState, player: PlayerId, attacker: string, ctx: GameContext): boolean {
+  const taxes = attackTaxes(s, player);
+  if (taxes.length === 0) return true;
+  const discards = taxes.filter((t) => t.rule === "discard_2_per_attack").length * 2;
+  const rests = taxes.filter((t) => t.rule === "rest_one_active_card_per_attack").length;
+  return s.players[player].hand.length >= discards && activeCards(s, player, attacker, ctx).length >= rests;
 }
 
 /**
@@ -155,27 +182,48 @@ export function declareAttack(
   s.battle = { attacker: attackerRef, defender: targetRef, target: targetRef, step: "attack_declared", pendingAutos: [] };
   events.push({ type: "ATTACK_DECLARED", player, attacker: action.attacker, target: action.target });
 
-  // 8-1-3 : les capacités « quand cette carte attaque / est attaquée » se mettent en suspens.
   // 22-8-2 : [Réplique] / [Tri-offensive] passe en état de suspens quand la carte attaque,
   // si elle n'a pas déjà été utilisée X-1 fois ce tour (22-8-3).
   const usageKey = `dual_attack:${action.attacker}`;
   if ((s.turnUsage[usageKey] ?? 0) < readyAfterBattleCount(s, attackerRef, ctx.cards)) {
     s.battle.pendingAutos.push({ kind: "dual_attack", card: attackerRef, usageKey });
   }
+  s.pending = null;
+  // « Ne peut pas attaquer à moins de ... à chaque fois » : coût supplémentaire de la déclaration
+  // d'attaque, payé juste après avoir passé l'attaquant en mode Inertie (décision du joueur).
+  const taxes = attackTaxes(s, player);
+  if (taxes.length > 0) {
+    const steps: EffectStep[] = taxes.map((t) =>
+      t.rule === "discard_2_per_attack"
+        ? { do: "discard", count: 2 }
+        : { do: "set_rest", target: { owner: "self", zone: ["leader", "battle", "unison", "energy"], count: 1 }, exclude: [action.attacker] },
+    );
+    const source =
+      attacker.kind === "leader"
+        ? { uid: action.attacker, cardId: s.players[player].leader.cardId }
+        : { uid: attacker.card.uid, cardId: attacker.card.cardId };
+    startResolution(s, ctx, player, source, steps, { kind: "attack_after_tax" }, events);
+    return null;
+  }
+  continueAttack(s, ctx, events);
+  return null;
+}
+
+/** 8-1-3 à 8-1-6 : suite de la déclaration d'attaque (une fois les coûts payés). */
+export function continueAttack(s: GameState, ctx: GameContext, events: GameEvent[]): void {
+  const battle = s.battle!;
+  const player = battle.attacker.player;
+  const attackerRef = battle.attacker;
+  const targetRef = battle.target;
+  const byBattleCard = s.players[player].battle.some((c) => c.uid === attackerRef.uid);
+  // 8-1-3 : les capacités « quand cette carte attaque / est attaquée » se mettent en suspens.
   // Ordre (8-1-3 à 8-1-6, confirmé par le joueur) : les [Auto.] « quand cette carte attaque /
   // est attaquée » se mettent en suspens ; fenêtre de contre ; point de contrôle (elles se
   // résolvent, même si l'attaque a été annulée) ; puis le blocage.
   queueTriggers(s, { event: "attacks", ref: attackerRef }, ctx, events);
   queueTriggers(s, { event: "attacked", ref: targetRef }, ctx, events);
   s.pending = null;
-  openCounterWindow(
-    s,
-    ctx,
-    { on: "attack", player, attacker: attackerRef, byBattleCard: attacker.kind === "battle" },
-    { kind: "attack_checkpoint" },
-    events,
-  );
-  return null;
+  openCounterWindow(s, ctx, { on: "attack", player, attacker: attackerRef, byBattleCard }, { kind: "attack_checkpoint" }, events);
 }
 
 /** 22-4 : étape de blocage — le défenseur choisit au plus un Bloqueur, s'il en a. */
@@ -381,6 +429,11 @@ function damageStep(s: GameState, ctx: GameContext, events: GameEvent[]): void {
       // 8-4-6-2-1 : la carte de défense est mise KO (5-12-1 : placée dans la Dispersion ;
       // 22-14-3 : retirée de la partie si elle a [Ultimate]).
       koBattleCard(s, ctx, battle.defender.player, defender.card, events);
+      // Effets retardés « quand une carte de Combat adverse est mise KO via le combat ».
+      for (const d of s.delayed) {
+        if (d.event !== "opponent_battle_card_ko_by_battle" || d.player === battle.defender.player) continue;
+        enqueueSteps(s, d.player, d.source, d.steps, "effet retardé", events);
+      }
     } else if (defender?.kind === "unison") {
       // 13-5-2 : retirer autant de marqueurs que les dégâts que la carte infligerait à un Leader
       // ([Frappe]), sinon un seul. À 0 marqueur, l'Unisson quitte la Zone Unisson (21-9).
@@ -507,14 +560,22 @@ function finishBattle(s: GameState, ctx: GameContext, events: GameEvent[]): void
   // 8-5-8 : toutes les cartes des Zones de Combo vont dans la Dispersion de leur propriétaire.
   for (const id of [s.turnPlayer, opponentOf(s.turnPlayer)]) {
     const cards = s.players[id].combo.splice(0);
-    for (const c of cards) toDrop(s, c);
+    for (const c of cards) {
+      forgetCard(s, c.uid);
+      // 19-1-7 : un jeton qui quitte la Zone de Combo est retiré de la partie.
+      if (!removeIfUltimate(s, c, ctx.cards)) toDrop(s, c);
+    }
     if (cards.length > 0) events.push({ type: "COMBO_ZONE_CLEARED", player: id, count: cards.length });
   }
   // 8-5-9 / 8-5-10 : capacités « À la fin d'un combat » et capacités en attente.
   // 22-8-3 : [Réplique] / [Tri-offensive] en suspens : la carte repasse en mode Action. Elle se
   // résout même si la carte a perdu ses Capacités pendant le combat (décision du joueur).
   for (const auto of s.battle!.pendingAutos) {
-    if (auto.kind !== "dual_attack") continue;
+    // « ... à la fin du combat » : se met en suspens et se résout au point de contrôle.
+    if (auto.kind === "steps") {
+      enqueueSteps(s, auto.player, auto.source, auto.steps, "fin du combat", events);
+      continue;
+    }
     const p = s.players[auto.card.player];
     const target =
       p.leader.uid === auto.card.uid ? p.leader : [...p.battle, ...p.unison].find((c) => c.uid === auto.card.uid);
@@ -530,6 +591,7 @@ function finishBattle(s: GameState, ctx: GameContext, events: GameEvent[]): void
   // 8-5-11 / 8-5-12 : fin des effets « pour tout le combat ».
   s.powerMods = s.powerMods.filter((m) => m.until !== "battle");
   s.effects = s.effects.filter((e) => !e.battleOnly);
+  s.delayed = s.delayed.filter((d) => !d.battleOnly);
   // 8-5-13 : le combat s'achève, retour à 7-3-3 (après un point de contrôle).
   events.push({ type: "BATTLE_ENDED" });
   s.battle = null;

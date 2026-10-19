@@ -78,8 +78,10 @@ export function parseCost(
       // « Retirez cette carte de la partie » (ex. Extra Z).
       others.push(c as EffectStep);
     } else if (c["do"] === "self_restriction") {
-      // « Vous ne pouvez pas ... pour toute la durée du tour » : toujours payable ; la
-      // restriction elle-même n'est pas encore appliquée (signalée pendant la résolution).
+      // « Vous ne pouvez pas ... pour toute la durée du tour » : toujours payable.
+      others.push(c as EffectStep);
+    } else if (c["do"] === "move_self" && c["from"] === "combo" && c["to"] === "drop") {
+      // « Placez cette carte dans la Dispersion de son propriétaire depuis votre Zone de Combo ».
       others.push(c as EffectStep);
     } else {
       return null;
@@ -131,7 +133,14 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
 
   const sourcesOfEnergy = availableEnergySources(s, player, ctx.cards);
   const result: Activatable[] = [];
+  // « Vous ne pouvez pas activer les Capacités d'exemplaires de cette carte » (pendant ce tour).
+  const forbidden = new Set(
+    s.restrictions
+      .filter((r) => r.player === player && r.rule === "no_activate_copies" && r.fromTurn <= s.turnNumber && s.turnNumber <= r.untilTurn)
+      .map((r) => r.cardId),
+  );
   for (const { card, abilities, zone } of sources) {
+    if (forbidden.has(card.cardId)) continue;
     abilities.forEach((ability, index) => {
       if (ability["kind"] !== "activate") return;
       if (!timings.includes(ability["timing"] as string)) return;

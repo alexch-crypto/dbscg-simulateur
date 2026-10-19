@@ -11,7 +11,7 @@ import { ctx, expectRefused, give, p2Main, play } from "./helpers";
 //  BT1-107  Soif de sang glaciale : Contre : Mise en jeu (Leader « Armée de Freezer ») — annule les Capacités
 //           de la carte de Combat jouée pour le tour. (coût 1 jaune)
 //  P-561    Piccolo Daimaô : Contre : Attaque — annulez l'attaque et jouez cette carte (on paie son coût).
-//  EB1-037  Clones meurtriers : Contre : Attaque — annulez l'attaque (+ jeton, non géré). Avec 5 points de vie
+//  EB1-037  Clones meurtriers : Contre : Attaque — annulez l'attaque et jouez un jeton Meda (Bloqueur pour le tour). Avec 5 points de vie
 //           ou moins, on peut payer en rajoutant une carte de Vie à sa main au lieu de l'énergie.
 //  BT10-075 Freezer, Méchant charismatique : Contre : Mise en jeu — jouez cette carte (on paie son coût).
 
@@ -225,8 +225,8 @@ describe("Contres de cartes de Combat : jouer la carte", () => {
     let r = play(s, action);
     r = play(r.state, counterAction(r.state, "P1", mechant.uid));
     expect(r.state.players.P1.battle.map((c) => c.uid)).toContain(mechant.uid);
-    // La restriction « vous ne pouvez pas activer d'autres Contre : Mise en jeu » est signalée (non gérée).
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT10-075" }));
+    // La restriction « vous ne pouvez pas activer d'autres Contre : Mise en jeu » est en place.
+    expect(r.state.restrictions).toEqual([{ player: "P1", rule: "no_other_counter_play", uid: mechant.uid, fromTurn: r.state.turnNumber, untilTurn: r.state.turnNumber }]);
     // Puis Krillin arrive en jeu, et l'[Auto.] de Méchant charismatique (KO coût ≤ 7) se résout.
     expect(r.state.players.P2.battle.map((c) => c.uid)).toContain(played.uid);
     expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P1", options: [played.uid] });
@@ -246,7 +246,11 @@ describe("Coût alternatif : Clones meurtriers", () => {
     r = play(r.state, { type: "CHOOSE_LIFE", player: "P1", indices: [0] });
     expect(r.state.players.P1.life).toHaveLength(4);
     expect(r.events).toContainEqual({ type: "ATTACK_NEGATED" });
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "EB1-037" })); // jeton
+    // Un jeton Meda (5000, Bloqueur pour le tour) arrive dans la Zone de Combat de P1.
+    const token = r.state.players.P1.battle.find((c) => c.cardId === "EB1-037-JETON1")!;
+    expect(token).toMatchObject({ owner: "P1", mode: "active" });
+    expect(r.events).toContainEqual({ type: "TOKEN_CREATED", player: "P1", uid: token.uid, cardId: "EB1-037-JETON1" });
+    expect(r.state.effects).toContainEqual({ uid: token.uid, kind: "grant_keyword", keyword: "blocker", untilTurn: r.state.turnNumber });
     expect(r.state.battle).toBeNull();
   });
 

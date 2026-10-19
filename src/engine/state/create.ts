@@ -90,6 +90,11 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     counterWindow: null,
     attackLimits: [],
     successorDiscounts: [],
+    attackTaxes: [],
+    restrictions: [],
+    delayed: [],
+    drawReplacements: [],
+    nextTokenId: 1,
     settings: {
       counterPrompt: { P1: input.counterPrompt?.P1 ?? "always", P2: input.counterPrompt?.P2 ?? "always" },
     },

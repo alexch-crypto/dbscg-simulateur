@@ -8,12 +8,12 @@
 // 3. Une fois la file vide, le jeu reprend là où il en était (`Continuation`).
 //
 // Non géré pour l'instant : coûts de Capacité des [Auto.], fenêtres de contre (9-6-6 / 9-6-8),
-// [Auto.] des cartes en main ou en Dispersion, effets retardés.
+// [Auto.] des cartes en main ou en Dispersion. Les effets retardés passent par `enqueueSteps`.
 
 import { abilitiesOf, type RawAbility } from "../cards/abilities";
 import type { Action, GameContext, GameEvent } from "../protocol";
 import { opponentOf, type CardInstance, type CardRef, type Continuation, type GameState, type PlayerId, type QueuedAuto } from "../state/types";
-import { battleEndStep, startBlockerStep } from "./battle";
+import { battleEndStep, continueAttack, startBlockerStep } from "./battle";
 import { checkConditions, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
 import { afterCounterLink } from "./counters";
@@ -80,6 +80,21 @@ function enqueue(
   };
   s.autoQueue.push(auto);
   events.push({ type: "AUTO_TRIGGERED", player, uid: source.uid, cardId: source.cardId });
+}
+
+/**
+ * Met en suspens des instructions qui ne viennent pas d'une [Auto.] imprimée (effet retardé,
+ * effet « à la fin du combat ») : elles se résolvent au prochain point de contrôle.
+ */
+export function enqueueSteps(
+  s: GameState,
+  player: PlayerId,
+  source: { uid: string; cardId: string },
+  steps: unknown[],
+  label: string,
+  events: GameEvent[],
+): void {
+  enqueue(s, player, source, { kind: "auto", effect: structuredClone(steps), text: label }, -1, events);
 }
 
 /** Met en suspens les [Auto.] déclenchées par un événement (9-6-2). */
@@ -246,6 +261,9 @@ export function continueWith(s: GameState, ctx: GameContext, then: Continuation,
       return;
     case "counter_chain":
       afterCounterLink(s, ctx, events);
+      return;
+    case "attack_after_tax":
+      continueAttack(s, ctx, events);
       return;
   }
 }

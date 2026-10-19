@@ -23,7 +23,18 @@
 //   play_self                 jouer cette carte (depuis la main / la Dispersion), 5-5-3
 //   optional                  « Vous pouvez [coût]. Si vous le faites, [effet] » (20-16)
 //   if                        « De plus, si la carte choisie est... »
-//   remove_markers            (pas encore de Zone Unisson : aucune cible)
+//   remove_markers            retirer des marqueurs d'une Unisson (21-9)
+//   choose / set_power        « choisissez une carte » ; « la puissance de cette carte devient X »
+//   set_revealed              passer une carte en mode Révélé (21-16)
+//   combo_from                « utilisez une carte ... pour une Combo » (5-7-3-1 : sans coût de Combo)
+//   create_token              créer des jetons (19)
+//   if_previous_succeeded     « Si vous avez joué une carte ainsi, ... »
+//   opponent_attack_tax       « votre adversaire ne peut pas attaquer à moins de ... à chaque fois »
+//   self_restriction          « vous ne pouvez pas ... » (restriction en cours)
+//   delayed                   effet retardé « quand une carte de Combat adverse est mise KO via le combat »
+//   optional_at_battle_end    « vous pouvez [coût] à la fin du combat. Si vous le faites, ... »
+//   replacement               pioches adverses remplacées (Oolong, Désir immédiat)
+//   move_under                placer sous une carte nommée (rien si la carte n'est pas en jeu)
 //   flip_leader               (interne) retourner le Leader, 22-2-4
 // Toute autre instruction est ignorée et signalée dans le journal (décision du joueur).
 
@@ -38,13 +49,14 @@ import {
   type PendingDecision,
   type PlayerId,
 } from "../state/types";
-import { continueWith } from "./autos";
+import { continueWith, queueTriggers } from "./autos";
 import { drawCards, shuffleDeck } from "./basic";
 import { energyCostOf, matchesFilter } from "./conditions";
 import { openCounterWindow } from "./counters";
 import { checkDefeat } from "./defeat";
-import { keywordsOf, readyBlockedByEffect } from "./keywords";
+import { keywordsOf, readyBlockedByEffect, removeIfUltimate } from "./keywords";
 import { enterBattleArea } from "./play";
+import { powerOf } from "./battle";
 import { removeLeaderZ } from "./zdeck";
 import { forgetCard, koBattleCard, removeMarkers } from "./zones";
 
@@ -136,6 +148,7 @@ function untilTurnFor(s: GameState, duration: unknown): { untilTurn: number; bat
     case "battle":
       return { untilTurn: s.turnNumber, battleOnly: true };
     case "until_end_of_opponent_turn":
+    case "opponent_next_turn":
       return { untilTurn: myTurn ? s.turnNumber + 1 : s.turnNumber };
     case "opponent_next_charge_phase":
       return { untilTurn: myTurn ? s.turnNumber + 1 : s.turnNumber + 2, chargeOnly: true };
@@ -224,6 +237,9 @@ const PROMPTS: Record<string, string> = {
   discard: "de votre main à défausser",
   opponent_discards: "de votre main à défausser",
   move_from_hand: "de votre main à déplacer",
+  choose: "",
+  combo_from: "à utiliser pour une Combo (Capacités annulées pour le tour)",
+  move_to_deck_top: "de la Dispersion adverse à placer sur le dessus de son deck",
 };
 
 /**
@@ -241,8 +257,11 @@ function askOrApply(
   looked?: { uid: string; cardId: string }[],
   maxTotalCost?: number,
 ): boolean {
-  // 5-2-6 : aucune cible possible => l'instruction est ignorée.
-  if (count.max === 0 && !looked) return false;
+  // 5-2-6 : aucune cible possible => l'instruction est ignorée (et « la carte choisie » n'existe pas).
+  if (count.max === 0 && !looked) {
+    if (typeof step["save_as"] === "string") s.resolving!.saved[step["save_as"]] = [];
+    return false;
+  }
   // Choix forcé (il faut prendre toutes les cibles possibles) : pas besoin de demander.
   if (!looked && maxTotalCost === undefined && count.min === count.max && count.max === options.length) {
     return applyChoice(s, ctx, step, options, events);
@@ -375,9 +394,59 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
         if (!c.card || c.zone === "leader") continue;
         const zone = s.players[c.player][c.zone as "battle" | "energy" | "combo"];
         zone.splice(zone.indexOf(c.card), 1);
-        if (c.zone === "battle") forgetCard(s, c.uid);
-        toDrop(s, c.card);
+        forgetCard(s, c.uid);
         events.push({ type: "CARD_TO_DROP", player: c.player, uid: c.uid, cardId: c.card.cardId, from: c.zone });
+        // 14-1-4 / 22-14-3 / 19-1-7 : carte Z, [Ultimate] ou jeton => retiré de la partie à la place.
+        if (c.zone !== "energy" && removeIfUltimate(s, c.card, ctx.cards)) {
+          events.push({ type: "CARD_REMOVED", player: c.player, uid: c.uid, cardId: c.card.cardId });
+        } else {
+          toDrop(s, c.card);
+        }
+      }
+      return false;
+    }
+    case "choose":
+      // « Choisissez une carte » : seulement mémorisée (save_as) pour les instructions suivantes.
+      return false;
+    case "set_power": {
+      // « La puissance de cette carte devient la puissance de la carte choisie » (puissance actuelle).
+      const value = r.memo.length > 0 ? Number(r.memo[0]) : 0;
+      for (const c of chosen) {
+        s.effects.push({ uid: c.uid, kind: "set_power", value, untilTurn: s.turnNumber });
+        events.push({ type: "POWER_SET", uid: c.uid, value });
+      }
+      r.memo = [];
+      return false;
+    }
+    case "combo_from": {
+      // 5-7-3-1 : Combo via une Capacité, sans payer le coût de Combo ; ses Capacités sont annulées.
+      const p = s.players[r.player];
+      const from = step["zone"] as "hand" | "drop";
+      for (const uid of uids) {
+        const zone = p[from];
+        const i = zone.findIndex((c) => c.uid === uid);
+        if (i < 0) continue;
+        const card = zone.splice(i, 1)[0]!;
+        card.mode = "active";
+        card.faceUp = true;
+        p.combo.push(card);
+        if (step["negate_skills"] === "turn") s.effects.push({ uid, kind: "negate_all", untilTurn: s.turnNumber });
+        events.push({ type: "COMBO", player: r.player, uid, cardId: card.cardId, from, energyRested: [], markersUsed: 0 });
+        queueTriggers(s, { event: "used_in_combo", card }, ctx, events);
+      }
+      return false;
+    }
+    case "move_to_deck_top": {
+      // Carte(s) de la Dispersion d'un joueur placée(s) sur le dessus du deck de son propriétaire.
+      const owner = (step["from_player"] as PlayerId | undefined) ?? opponentOf(r.player);
+      const drop = s.players[owner].drop;
+      for (const uid of uids) {
+        const i = drop.findIndex((c) => c.uid === uid);
+        if (i < 0) continue;
+        const card = drop.splice(i, 1)[0]!;
+        card.faceUp = false;
+        s.players[card.owner].deck.unshift(card);
+        events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: `${ctx.cards.get(card.cardId)?.name ?? card.cardId} est placée sur le dessus du deck de ${card.owner}` });
       }
       return false;
     }
@@ -473,6 +542,7 @@ const BOARD_STEPS = new Set([
   "move_to_drop",
   "remove_markers",
   "modify_energy_cost",
+  "choose",
 ]);
 
 /** Cartes de la main d'un joueur correspondant à un filtre (null si filtre non géré). */
@@ -516,6 +586,13 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       const event = s.counterWindow?.event;
       return event?.on === "play" ? applyChoice(s, ctx, step, [event.cardUid], events) : false;
     }
+    // « Votre carte en combat ».
+    if (target === "own_card_in_battle") {
+      const battle = s.battle;
+      if (!battle) return false;
+      const ref = battle.attacker.player === r.player ? battle.attacker : battle.defender.player === r.player ? battle.defender : null;
+      return ref && findCandidate(s, ref.uid) ? applyChoice(s, ctx, step, [ref.uid], events) : false;
+    }
     // « La carte choisie » : mémorisée par une instruction précédente (`save_as`).
     if (typeof target === "string" && r.saved[target]) {
       const still = r.saved[target]!.filter((uid) => findCandidate(s, uid));
@@ -534,6 +611,8 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
     if (step.do === "set_rest") pool = pool.filter((c) => modeHolder(s, c).mode === "active");
     if (step.do === "set_active") pool = pool.filter((c) => modeHolder(s, c).mode === "rest" && !readyBlockedByEffect(s, c.uid));
     if (step.do === "ko") pool = pool.filter((c) => c.zone === "battle");
+    // Cartes exclues (ex. la carte attaquante, pour payer une taxe d'attaque).
+    if (Array.isArray(step["exclude"])) pool = pool.filter((c) => !(step["exclude"] as string[]).includes(c.uid));
     // 20-6 : « dont le total des coûts d'énergie est de X ou moins ».
     const maxTotal = typeof target["total_cost_at_most"] === "number" ? target["total_cost_at_most"] : undefined;
     if (maxTotal !== undefined) pool = pool.filter((c) => energyCostOf(ctx.cards.get(c.card?.cardId ?? "")) <= maxTotal);
@@ -541,10 +620,228 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
   }
 
   switch (step.do) {
-    case "draw":
+    case "draw": {
       if (typeof step["count"] !== "number") break;
+      // Pioche remplacée (Oolong, Désir immédiat) : seulement via la Capacité d'une carte autre que Leader.
+      const sourceType = ctx.cards.get(r.source.cardId)?.type;
+      const replacement = s.drawReplacements.find(
+        (d) => d.against === r.player && d.fromTurn <= s.turnNumber && s.turnNumber <= d.untilTurn,
+      );
+      if (replacement && sourceType !== "leader" && sourceType !== "z_leader") {
+        events.push({
+          type: "EFFECT_NOTE",
+          player: replacement.player,
+          cardId: replacement.source.cardId,
+          text: `${step["count"]} pioche(s) de ${r.player} remplacée(s)`,
+        });
+        const replaced: EffectStep[] = [];
+        for (let i = 0; i < step["count"]; i++) {
+          for (const st of replacement.steps) replaced.push({ ...st, chooser: replacement.player, from_player: replacement.against });
+        }
+        insertSteps(s, replaced);
+        return false;
+      }
       drawCards(s, r.player, step["count"], events);
       return false;
+    }
+
+    case "move_to_deck_top": {
+      // « Placez jusqu'à une carte de Combat depuis sa Dispersion sur le dessus du deck de son propriétaire. »
+      const target = step["target"];
+      if (!isObject(target) || target["zone"] !== "drop") break;
+      const chooser = (step["chooser"] as PlayerId | undefined) ?? r.player;
+      const owner = (step["from_player"] as PlayerId | undefined) ?? (target["owner"] === "self" ? r.player : opp);
+      const options: string[] = [];
+      for (const card of s.players[owner].drop) {
+        const ok = matchesFilter(card, target["filter"], ctx.cards, s);
+        if (ok === null) break;
+        if (ok) options.push(card.uid);
+      }
+      const fixed = { ...step, from_player: owner };
+      r.steps[r.index] = fixed;
+      return askOrApply(s, ctx, fixed, chooser, options, targetCount(target, options.length), events);
+    }
+
+    case "set_power": {
+      // « La puissance de cette carte devient ... » ; « au début du tour adverse, elle devient
+      // 4000 » = retour à la puissance imprimée (la valeur cesse au début du tour adverse).
+      if (step["target"] !== "this") break;
+      const value = step["value"];
+      if (step["from"] !== undefined) {
+        if (typeof value === "number" && value === ctx.cards.get(r.source.cardId)?.power) return false;
+        break;
+      }
+      let amount: number | null = typeof value === "number" ? value : null;
+      if (isObject(value) && typeof value["power_of"] === "string") {
+        const uid = r.saved[value["power_of"]]?.[0];
+        const found = uid ? findCandidate(s, uid) : null;
+        // Aucune carte choisie (« jusqu'à une ») : la puissance ne change pas.
+        if (!found) return false;
+        amount = powerOf(s, { player: found.player, uid: found.uid }, ctx);
+      }
+      if (amount === null) break;
+      const self = findCandidate(s, r.source.uid);
+      if (!self || self.zone === "energy") return false;
+      r.memo = [String(amount)];
+      return applyChoice(s, ctx, step, [self.uid], events);
+    }
+
+    case "set_revealed": {
+      // 1-10-2 / 21-16 : passer une carte en mode Révélé. Seules les cartes en mode Caché changent ;
+      // aucune carte de ce simulateur ne se joue encore en mode Caché, donc rien ne change.
+      events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: "aucune carte en mode Caché : rien ne change" });
+      return false;
+    }
+
+    case "combo_from": {
+      // « Utilisez jusqu'à une carte ... depuis votre main / Dispersion pour une Combo » (5-7-3-1).
+      const zone = step["zone"];
+      if ((zone !== "hand" && zone !== "drop") || !s.battle) break;
+      const options: string[] = [];
+      for (const card of p[zone]) {
+        const def = ctx.cards.get(card.cardId);
+        // 5-7-2 : coût et puissance de Combo non négatifs, carte de Combat.
+        if (def?.type !== "battle" || !def.combo || def.combo.cost < 0 || def.combo.power < 0) continue;
+        const ok = matchesFilter(card, step["filter"], ctx.cards, s);
+        if (ok === null) {
+          notImplemented(s, describeStep(step), events);
+          return false;
+        }
+        if (ok) options.push(card.uid);
+      }
+      return askOrApply(s, ctx, step, r.player, options, targetCount(step, options.length), events);
+    }
+
+    case "create_token": {
+      // 19-1-3 : le jeton est mis en jeu dans la Zone de Combat du maître de l'effet.
+      const tokenId = step["token_id"];
+      if (typeof tokenId !== "string" || !ctx.cards.get(tokenId)) break;
+      const n = typeof step["count"] === "number" ? step["count"] : 1;
+      const created: string[] = [];
+      for (let i = 0; i < n; i++) {
+        const card: CardInstance = { uid: `${r.player}-J${s.nextTokenId++}`, cardId: tokenId, owner: r.player, mode: "active", faceUp: true };
+        p.battle.push(card);
+        created.push(card.uid);
+        events.push({ type: "TOKEN_CREATED", player: r.player, uid: card.uid, cardId: tokenId });
+        queueTriggers(s, { event: "played", card }, ctx, events);
+      }
+      const granted = step["grant_keywords"];
+      if (Array.isArray(granted) && granted.length > 0) {
+        const d = untilTurnFor(s, step["grant_duration"] ?? "turn");
+        if (!d) break;
+        for (const keyword of granted as string[]) {
+          addEffects(s, created, (uid) => ({ uid, kind: "grant_keyword", keyword, untilTurn: d.untilTurn }));
+        }
+        events.push({ type: "KEYWORDS_GRANTED", uids: created, keywords: [...(granted as string[])] });
+      }
+      return false;
+    }
+
+    case "if_previous_succeeded": {
+      // « Si vous avez joué une carte ainsi, ... »
+      if (r.saved["__played"]?.length) insertSteps(s, (step["then"] ?? []) as EffectStep[]);
+      return false;
+    }
+
+    case "opponent_attack_tax": {
+      const rule = step["rule"];
+      if (rule !== "discard_2_per_attack" && rule !== "rest_one_active_card_per_attack") break;
+      const d = untilTurnFor(s, step["duration"]);
+      if (!d) break;
+      s.attackTaxes.push({ player: opp, rule, untilTurn: d.untilTurn });
+      events.push({
+        type: "EFFECT_NOTE",
+        player: r.player,
+        cardId: r.source.cardId,
+        text:
+          rule === "discard_2_per_attack"
+            ? `${opp} doit défausser deux cartes de sa main à chaque attaque`
+            : `${opp} doit passer une de ses cartes en mode Action en mode Inertie à chaque attaque`,
+      });
+      return false;
+    }
+
+    case "self_restriction": {
+      // « Vous ne pouvez pas ... » : la restriction s'applique à son maître.
+      const myTurn = s.turnPlayer === r.player;
+      if (step["rule"] === "cannot_activate_other_counter_play" && step["duration"] === "turn") {
+        s.restrictions.push({ player: r.player, rule: "no_other_counter_play", uid: r.source.uid, fromTurn: s.turnNumber, untilTurn: s.turnNumber });
+        events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: "plus de [Contre : Mise en jeu] d'autres cartes ce tour" });
+        return false;
+      }
+      if (step["rule"] === "cannot_activate_copies_of_this_card" && step["duration"] === "your_next_turn") {
+        const turn = s.turnNumber + (myTurn ? 2 : 1);
+        s.restrictions.push({ player: r.player, rule: "no_activate_copies", cardId: r.source.cardId, fromTurn: turn, untilTurn: turn });
+        events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: "les exemplaires de cette carte ne pourront pas activer leurs Capacités pendant votre tour suivant" });
+        return false;
+      }
+      break;
+    }
+
+    case "delayed": {
+      // « Quand une carte de Combat adverse est mise KO via le combat, ... » (pendant ce combat).
+      const when = step["when"];
+      if (!isObject(when) || when["event"] !== "opponent_battle_card_ko_by_battle" || step["duration"] !== "battle" || !s.battle) break;
+      s.delayed.push({
+        player: r.player,
+        source: { ...r.source },
+        event: "opponent_battle_card_ko_by_battle",
+        steps: (step["then"] ?? []) as EffectStep[],
+        battleOnly: true,
+        untilTurn: s.turnNumber,
+      });
+      return false;
+    }
+
+    case "optional_at_battle_end": {
+      // « Vous pouvez [coût] à la fin du combat. Si vous le faites, [effet]. »
+      if (!s.battle) return false;
+      s.battle.pendingAutos.push({
+        kind: "steps",
+        player: r.player,
+        source: { ...r.source },
+        steps: [{ do: "optional", cost: step["cost"] ?? [], then: step["then"] ?? [] }],
+      });
+      return false;
+    }
+
+    case "replacement": {
+      const when = step["when"];
+      if (!isObject(when) || when["event"] !== "opponent_draws_by_non_leader_skill" || step["duration"] !== "opponent_next_turn") break;
+      const turn = s.turnNumber + (s.turnPlayer === r.player ? 1 : 2);
+      s.drawReplacements.push({
+        player: r.player,
+        against: opp,
+        source: { ...r.source },
+        steps: (step["instead"] ?? []) as EffectStep[],
+        fromTurn: turn,
+        untilTurn: turn,
+      });
+      events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: `pendant le tour suivant de ${opp}, ses pioches via des Capacités autres que Leader seront remplacées` });
+      return false;
+    }
+
+    case "move_under": {
+      // « Placez ... sous un {Nom} dans votre Zone de Combat » : sans cette carte en jeu, rien ne se passe.
+      const under = step["under"];
+      const name = isObject(under) ? under["name"] : undefined;
+      const present = p.battle.some((c) => ctx.cards.get(c.cardId)?.name === name);
+      if (present) break;
+      events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: `pas de {${String(name)}} dans votre Zone de Combat : rien n'est placé dessous` });
+      return false;
+    }
+
+    case "move_self": {
+      // Coût « Placez cette carte dans la Dispersion de son propriétaire depuis votre Zone de Combo ».
+      if (step["from"] !== "combo" || step["to"] !== "drop") break;
+      const i = p.combo.findIndex((c) => c.uid === r.source.uid);
+      if (i >= 0) {
+        const card = p.combo.splice(i, 1)[0]!;
+        toDrop(s, card);
+        events.push({ type: "CARD_TO_DROP", player: r.player, uid: card.uid, cardId: card.cardId, from: "combo" });
+      }
+      return false;
+    }
 
     case "life_to_hand": {
       // 1-13-2 : ce n'est pas un dégât. 3-9-2 : on choisit des positions, à l'aveugle.
@@ -611,7 +908,10 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
 
     case "play_self": {
       // 5-5-3 : jouée via une Capacité, sans payer son coût d'Énergie.
-      if (step["to"] !== undefined) break; // jouer chez l'adversaire : pas encore géré
+      // « dans la Zone de Combat adverse » : la carte reste à son propriétaire, son maître devient
+      // l'adversaire (0-3-3 / 0-3-4-1).
+      if (step["to"] !== undefined && step["to"] !== "opponent_battle_area") break;
+      const into = step["to"] === "opponent_battle_area" ? opp : r.player;
       const from = step["from"] as "hand" | "drop";
       if (from !== "hand" && from !== "drop") break;
       const zone = s.players[r.player][from];
@@ -619,8 +919,9 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       if (i < 0) return false; // la carte n'est plus là : l'effet échoue (9-6-11)
       const card = zone[i]!;
       const via = typeof step["via"] === "string" ? step["via"] : undefined;
-      const error = enterBattleArea(s, ctx, r.player, card, from, (step["mode"] as "rest" | undefined) ?? "active", events, via);
+      const error = enterBattleArea(s, ctx, r.player, card, from, (step["mode"] as "rest" | undefined) ?? "active", events, via, into);
       if (error) events.push({ type: "NOT_IMPLEMENTED", player: r.player, cardId: card.cardId, what: error });
+      else r.saved["__played"] = [card.uid];
       return false;
     }
 

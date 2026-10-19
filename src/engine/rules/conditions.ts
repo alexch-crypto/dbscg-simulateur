@@ -72,6 +72,14 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
     }
     case "energy_count_with_color":
       return me.energy.filter((e) => db.get(e.cardId)?.colors.includes(c["color"] as never)).length >= num("min");
+    case "own_card_in_battle_attacking_battle_card": {
+      // « Qu'un de vos <...> est dans un combat durant lequel il attaque une carte de Combat. »
+      const battle = s.battle;
+      if (!battle || battle.attacker.player !== player) return false;
+      const attacker = me.battle.find((x) => x.uid === battle.attacker.uid);
+      const defender = opp.battle.find((x) => x.uid === battle.defender.uid);
+      return attacker !== undefined && defender !== undefined && matchesFilter(attacker, c["filter"], db, s) === true;
+    }
     case "any_of": {
       const results = (c["of"] as Json[]).map((sub) => checkCondition(s, player, sub, db, self));
       if (results.some((r) => r === true)) return true;
@@ -118,6 +126,22 @@ export function currentEnergyCost(s: GameState | undefined, card: CardInstance, 
   return Math.max(0, base + change);
 }
 
+/**
+ * Origines (traits) d'une carte, avec celles qu'elle s'attribue elle-même dans toutes les zones
+ * (« acquiert «Shenron» dans toutes les zones », Oolong, Désir immédiat).
+ */
+export function traitsOf(def: CardDefinition | undefined): string[] {
+  if (!def) return [];
+  const extra: string[] = [];
+  for (const ability of def.abilities) {
+    if (ability["kind"] !== "permanent" || ability["condition"]) continue;
+    for (const e of (ability["effect"] ?? []) as Json[]) {
+      if (e["do"] === "grant_trait" && e["target"] === "this" && e["zones"] === "all" && typeof e["trait"] === "string") extra.push(e["trait"]);
+    }
+  }
+  return extra.length > 0 ? [...def.traits, ...extra] : def.traits;
+}
+
 const sameColors = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((c) => b.includes(c));
 
 /**
@@ -129,11 +153,12 @@ export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatab
   const def = db.get(card.cardId);
   for (const [key, value] of Object.entries(filter as Json)) {
     switch (key) {
+      // 19-1-6-1 : un jeton sans coût d'énergie ne peut pas être choisi par un critère de coût.
       case "cost_at_most":
-        if (currentEnergyCost(s, card, db) > (value as number)) return false;
+        if (!def?.cost || currentEnergyCost(s, card, db) > (value as number)) return false;
         break;
       case "cost":
-        if (currentEnergyCost(s, card, db) !== value) return false;
+        if (!def?.cost || currentEnergyCost(s, card, db) !== value) return false;
         break;
       case "combo_cost":
         if (def?.combo?.cost !== value) return false;
@@ -142,7 +167,7 @@ export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatab
         if (def?.power !== value) return false;
         break;
       case "not_trait":
-        if (def?.traits.includes(value as string)) return false;
+        if (traitsOf(def).includes(value as string)) return false;
         break;
       case "mono_color":
         if (!sameColors(def?.colors ?? [], [value as string])) return false;
@@ -152,6 +177,7 @@ export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatab
         if (!sameColors(def?.colors ?? [], value as string[])) return false;
         break;
       case "not_token":
+        if (value === true && def?.token) return false;
         break;
       case "mode":
         if (card.mode !== value) return false;
@@ -163,7 +189,7 @@ export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatab
         if (!def?.character.includes(value as string)) return false;
         break;
       case "trait":
-        if (!def?.traits.includes(value as string)) return false;
+        if (!traitsOf(def).includes(value as string)) return false;
         break;
       case "colors_any":
         if (!(value as string[]).some((c) => def?.colors.includes(c as never))) return false;

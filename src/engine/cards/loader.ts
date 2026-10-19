@@ -291,7 +291,52 @@ export function parseCardFile(json: unknown): CardFileResult {
     }
   });
   const deck = readDeck(json["deck"], errors);
-  return { cards, deck, errors };
+  return { cards: [...cards, ...tokenDefinitions(cards)], deck, errors };
+}
+
+/**
+ * 19-1-2 : un jeton a les informations indiquées par l'effet qui le crée. Pour chaque instruction
+ * `create_token` d'une carte, on fabrique une fiche de carte de Combat (sans coût d'énergie,
+ * 19-1-6-1) et on note son numéro dans l'instruction (`token_id`).
+ */
+function tokenDefinitions(cards: CardDefinition[]): CardDefinition[] {
+  const result: CardDefinition[] = [];
+  for (const card of cards) {
+    let k = 0;
+    const visit = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(visit);
+        return;
+      }
+      if (!isObject(value)) return;
+      if (value["do"] === "create_token" && isObject(value["token"])) {
+        const token = value["token"];
+        const id = `${card.id}-JETON${++k}`;
+        value["token_id"] = id;
+        const combo = isObject(token["combo"]) ? token["combo"] : undefined;
+        result.push({
+          id,
+          type: "battle",
+          deckZone: "main",
+          token: true,
+          name: typeof token["name"] === "string" ? token["name"] : "Jeton",
+          colors: [],
+          power: typeof token["power"] === "number" ? token["power"] : 0,
+          character: [],
+          traits: [],
+          keywords: [],
+          abilities: [],
+          ...(combo && typeof combo["cost"] === "number" && typeof combo["power"] === "number"
+            ? { combo: { cost: combo["cost"], power: combo["power"] } }
+            : {}),
+          warnings: [],
+        });
+      }
+      for (const v of Object.values(value)) visit(v);
+    };
+    visit(card.type === "leader" ? [card.front, card.back] : card.abilities);
+  }
+  return result;
 }
 
 /** Rassemble plusieurs fichiers de cartes en une seule base, indexée par numéro. */

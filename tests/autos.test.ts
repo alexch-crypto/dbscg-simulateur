@@ -70,15 +70,15 @@ describe("[Auto.] « Quand cette carte est jouée »", () => {
     expect(r.state.pending).toEqual({ type: "MAIN", player: "P2" });
   });
 
-  it("partie non gérée : la [Limite X] / coût Successeur d'une carte est signalé, le reste se résout", () => {
-    // Overdrive : « votre adversaire ne peut pas attaquer à moins de... » (restriction d'attaque, à venir).
+  it("Overdrive : « votre adversaire ne peut pas attaquer à moins de... » jusqu'à la fin de son tour", () => {
     const s = p2Main();
     for (const id of ["BT9-123", "BT9-123", "BT9-123", "BT9-123", "BT24-105", "BT24-106", "P-561", "BT27-080", "BT24-134", "BT24-136"]) {
       give(s, "P2", id, "energy");
     }
     const overdrive = give(s, "P2", "BT24-133", "hand");
     const r = playCard(s, overdrive.uid);
-    expect(r.events).toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED", cardId: "BT24-133" }));
+    expect(r.events).not.toContainEqual(expect.objectContaining({ type: "NOT_IMPLEMENTED" }));
+    expect(r.state.attackTaxes).toEqual([{ player: "P1", rule: "rest_one_active_card_per_attack", untilTurn: r.state.turnNumber + 1 }]);
     expect(r.state.pending).toEqual({ type: "MAIN", player: "P2" });
   });
 

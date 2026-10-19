@@ -157,7 +157,9 @@ export type Continuation =
   /** 8-1-5 : après la fenêtre de contre d'une attaque, point de contrôle puis blocage. */
   | { kind: "attack_checkpoint" }
   /** 9-7-3-5 : un maillon de la chaîne de contres est résolu, passer au suivant. */
-  | { kind: "counter_chain" };
+  | { kind: "counter_chain" }
+  /** 8-1-1 : le coût supplémentaire d'une attaque (« à moins de ... ») est payé, l'attaque continue. */
+  | { kind: "attack_after_tax" };
 
 /** Type de [Contre] (22-10-2-1). */
 export type CounterOn = "play" | "attack" | "counter";
@@ -237,7 +239,61 @@ export type ContinuousEffect = { uid: string; untilTurn: number; battleOnly?: bo
   | /** « acquiert [X] ». */ { kind: "grant_keyword"; keyword: string }
   | /** « augmentez / réduisez de X le coût d'énergie de cette carte » (coût actuel). */ { kind: "cost_mod"; amount: number }
   | /** 22-15-6 : jouée via [Espace-temps] — transférée en Dimension parallèle à la fin du tour. */ { kind: "warp_at_end_of_turn" }
+  | /** « La puissance de cette carte devient X » (9-9-1 : appliqué avant les +X / -X). */ { kind: "set_power"; value: number }
 );
+
+/**
+ * « Votre adversaire ne peut pas attaquer à moins de [payer] à chaque fois » : coût
+ * supplémentaire de chaque déclaration d'attaque de `player`.
+ *   discard_2_per_attack             défausser deux cartes de sa main (Boo, Malveillance pure et simple)
+ *   rest_one_active_card_per_attack  passer en mode Inertie une de ses cartes en mode Action (Overdrive)
+ */
+export interface AttackTax {
+  player: PlayerId;
+  rule: "discard_2_per_attack" | "rest_one_active_card_per_attack";
+  untilTurn: number;
+}
+
+/**
+ * « Vous ne pouvez pas ... » (restriction que le joueur s'impose, souvent en coût de Capacité).
+ *   no_other_counter_play  pas de [Contre : Mise en jeu] d'autres cartes que `uid`
+ *   no_activate_copies     pas de Capacités des exemplaires de `cardId`
+ */
+export interface Restriction {
+  player: PlayerId;
+  rule: "no_other_counter_play" | "no_activate_copies";
+  uid?: string;
+  cardId?: string;
+  fromTurn: number;
+  untilTurn: number;
+}
+
+/** Effet retardé : « Quand [événement] (pendant ce combat), [effet] ». */
+export interface DelayedEffect {
+  player: PlayerId;
+  source: { uid: string; cardId: string };
+  /** opponent_battle_card_ko_by_battle : une carte de Combat adverse est mise KO via le combat. */
+  event: "opponent_battle_card_ko_by_battle";
+  steps: EffectStep[];
+  /** Disparaît à la fin du combat en cours. */
+  battleOnly: boolean;
+  untilTurn: number;
+}
+
+/**
+ * Effet de remplacement : « s'il pioche une carte via la Capacité d'une carte autre que Leader,
+ * [effet] à la place » (Oolong, Désir immédiat).
+ */
+export interface DrawReplacement {
+  /** Maître de l'effet (qui fait les choix). */
+  player: PlayerId;
+  /** Joueur dont les pioches sont remplacées. */
+  against: PlayerId;
+  source: { uid: string; cardId: string };
+  steps: EffectStep[];
+  fromTurn: number;
+  untilTurn: number;
+}
 
 /** « La prochaine fois que vous activez la Capacité Successeur d'un <...>, réduisez son coût de ... » */
 export interface SuccessorDiscount {
@@ -300,7 +356,9 @@ export interface BattleState {
 /** Capacité [Auto.] en suspens. */
 export type PendingAuto =
   /** 22-8 : [Réplique] / [Tri-offensive] — passer la carte en mode Action après le combat. */
-  { kind: "dual_attack"; card: CardRef; usageKey: string };
+  | { kind: "dual_attack"; card: CardRef; usageKey: string }
+  /** Effet à résoudre « à la fin du combat » (ex. Météore gigantesque de Destruction). */
+  | { kind: "steps"; player: PlayerId; source: { uid: string; cardId: string }; steps: EffectStep[] };
 
 export type GameResult =
   | { kind: "win"; winner: PlayerId; reason: string }
@@ -349,6 +407,16 @@ export interface GameState {
   attackLimits: AttackLimit[];
   /** Réductions de coût de la prochaine Capacité [Successeur] (Zarbon, Accompagnateur). */
   successorDiscounts: SuccessorDiscount[];
+  /** Coûts supplémentaires pour attaquer (« à moins de ... à chaque fois »). */
+  attackTaxes: AttackTax[];
+  /** Restrictions « vous ne pouvez pas ... ». */
+  restrictions: Restriction[];
+  /** Effets retardés en attente de leur événement. */
+  delayed: DelayedEffect[];
+  /** Pioches remplacées par un autre effet. */
+  drawReplacements: DrawReplacement[];
+  /** Prochain numéro de jeton (19). */
+  nextTokenId: number;
   /** Réglages choisis par les joueurs au début de la partie. */
   settings: { counterPrompt: Record<PlayerId, CounterPrompt> };
   result: GameResult | null;

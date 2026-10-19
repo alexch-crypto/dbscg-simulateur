@@ -289,7 +289,7 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
     case "BATTLE_STEP":
       return `→ ${STEP_NAMES[e.step]}`;
     case "COMBO":
-      return `${e.player} fait une Combo avec ${cardName(db, e.cardId)} (+${db.get(e.cardId)?.combo?.power ?? 0}).`;
+      return `${e.player} fait une Combo avec ${cardName(db, e.cardId)}${e.from === "drop" ? " depuis sa Dispersion" : ""} (+${db.get(e.cardId)?.combo?.power ?? 0}).`;
     case "POWER_COMPARED":
       return `Puissance : attaquant ${e.attacker} contre défenseur ${e.defender}.`;
     case "DAMAGE_DEALT":
@@ -317,7 +317,7 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
     case "CARDS_MODE_CHANGED":
       return `${e.uids.map(n).join(", ")} ${e.uids.length > 1 ? "passent" : "passe"} en mode ${e.mode === "rest" ? "Inertie" : "Action"}.`;
     case "CARD_PLAYED_BY_SKILL":
-      return `${e.player} joue ${cardName(db, e.cardId)} via une Capacité (depuis ${e.from === "hand" ? "sa main" : "sa Dispersion"})${e.mode === "rest" ? " en mode Inertie" : ""}.`;
+      return `${e.player} joue ${cardName(db, e.cardId)} via une Capacité (depuis ${e.from === "hand" ? "sa main" : "sa Dispersion"})${e.into ? ` dans la Zone de Combat de ${e.into}` : ""}${e.mode === "rest" ? " en mode Inertie" : ""}.`;
     case "ABILITY_ACTIVATED":
       return `${e.player} active une Capacité de ${cardName(db, e.cardId)}.`;
     case "CARDS_LOCKED":
@@ -344,6 +344,14 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `[Auto.] de ${cardName(db, e.cardId)} ne se résout pas : ${e.reason}.`;
     case "NOT_IMPLEMENTED":
       return `⚠ ${cardName(db, e.cardId)} : partie non gérée par le moteur — ${e.what}`;
+    case "EFFECT_NOTE":
+      return `${cardName(db, e.cardId)} (${e.player}) : ${e.text}.`;
+    case "TOKEN_CREATED":
+      return `${e.player} joue un jeton ${cardName(db, e.cardId)}.`;
+    case "POWER_SET":
+      return `La puissance de ${n(e.uid)} devient ${e.value}.`;
+    case "CARD_REVEALED_MODE":
+      return `${n(e.uid)} passe en mode Révélé.`;
     case "POWER_MODIFIED":
       return `${n(e.uid)} : ${e.amount > 0 ? "+" : ""}${e.amount} de puissance pour tout le ${e.until === "turn" ? "tour" : "combat"}.`;
     case "LIFE_TO_HAND":

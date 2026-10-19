@@ -394,10 +394,15 @@ describe("Robustesse : parties jouées au hasard", () => {
     };
   };
 
-  const allCardsOf = (s: GameState, p: PlayerId) => {
-    const z = s.players[p];
-    return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [{ ...z.leader.z, owner: p }] : [])];
-  };
+  // Toutes les cartes dont `p` est propriétaire, où qu'elles soient (une carte peut être jouée
+  // dans la Zone de Combat adverse) ; les jetons (19) ne sont pas de vraies cartes.
+  const allCardsOf = (s: GameState, p: PlayerId) =>
+    (["P1", "P2"] as const)
+      .flatMap((q) => {
+        const z = s.players[q];
+        return [...z.deck, ...z.hand, ...z.life, ...z.energy, ...z.battle, ...z.combo, ...z.drop, ...z.zEnergy, ...z.warp, ...z.removed, ...z.zDeck, ...z.unison, ...(z.leader.z ? [{ ...z.leader.z, owner: q }] : [])];
+      })
+      .filter((c) => c.owner === p && !ctx.cards.get(c.cardId)?.token);
 
   it("tous les coups proposés sont acceptés, et aucune carte ne disparaît", () => {
     for (let seed = 1; seed <= 30; seed++) {

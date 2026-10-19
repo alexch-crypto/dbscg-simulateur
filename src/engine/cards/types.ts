@@ -65,6 +65,8 @@ export interface CardDefinition extends CardFace {
   /** Coût d'Énergie Z (1-4). */
   zCost?: number;
   combo?: ComboStats;
+  /** 19 : jeton créé par un effet (pas une vraie carte : jamais dans un deck). */
+  token?: boolean;
   /** Leaders uniquement : face avant (front) et face arrière (back). */
   front?: CardFace;
   back?: CardFace;

@@ -20,7 +20,9 @@ const battleCard = (overrides: Record<string, unknown> = {}) => ({
 describe("Lecture du fichier deck Freezer", () => {
   it("charge les 31 cartes sans erreur", () => {
     expect(freezer.errors).toEqual([]);
-    expect(freezer.cards).toHaveLength(31);
+    // 31 cartes + le jeton Meda créé par Clones meurtriers (19-1-2).
+    expect(freezer.cards).toHaveLength(32);
+    expect(freezer.cards.filter((c) => c.token).map((c) => c.id)).toEqual(["EB1-037-JETON1"]);
   });
 
   it("lit les deux faces du Leader", () => {

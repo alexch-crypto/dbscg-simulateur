@@ -65,6 +65,10 @@ export interface PlayerView {
   counterWindow: { event: CounterEvent; chain: CounterLink[] } | null;
   /** Limites d'attaques en cours. */
   attackLimits: GameState["attackLimits"];
+  /** Coûts supplémentaires pour attaquer en cours (publics). */
+  attackTaxes: GameState["attackTaxes"];
+  /** Restrictions en cours (publiques). */
+  restrictions: GameState["restrictions"];
   /** Réglages des joueurs. */
   settings: GameState["settings"];
   result: GameState["result"];
@@ -133,6 +137,8 @@ export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
       ? { event: structuredClone(state.counterWindow.event), chain: structuredClone(state.counterWindow.chain) }
       : null,
     attackLimits: structuredClone(state.attackLimits),
+    attackTaxes: structuredClone(state.attackTaxes),
+    restrictions: structuredClone(state.restrictions),
     settings: structuredClone(state.settings),
     result: state.result,
     players,
