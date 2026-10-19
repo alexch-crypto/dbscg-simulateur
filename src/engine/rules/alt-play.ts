@@ -210,7 +210,9 @@ export function activateSuccessor(
   // Coût d'énergie (réductions comprises).
   const error = payEnergy(s, action.player, variant, action.payment, ctx);
   if (error) return error;
-  const discount = discountFor(s, action.player, s.players[action.player].hand.find((c) => c.uid === option.uid)!, ctx);
+  const successorCard = s.players[action.player].hand.find((c) => c.uid === option.uid)!;
+  successorCard.faceUp = true; // 9-4-2 : révélée
+  const discount = discountFor(s, action.player, successorCard, ctx);
   if (discount) s.successorDiscounts.splice(s.successorDiscounts.indexOf(discount), 1);
   events.push({
     type: "SUCCESSOR_ACTIVATED",
@@ -269,6 +271,7 @@ export function activateOverRealm(
   const resume = s.pending!;
   const p = s.players[action.player];
   s.turnUsage[`over_realm:${action.player}`] = 1;
+  card.faceUp = true; // 9-4-2 : révélée
   // 22-15-4 : coût — transférer toute sa Dispersion dans sa Dimension parallèle.
   const moved = p.drop.splice(0);
   p.warp.push(...moved);

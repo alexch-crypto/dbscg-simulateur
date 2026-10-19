@@ -205,6 +205,8 @@ export function activateAbility(
     return "cette Capacité n'a pas de coût d'énergie";
   }
   // 9-4-2 : la carte est révélée si elle est en main.
+  const inHand = s.players[action.player].hand.find((c) => c.uid === a.uid);
+  if (inHand) inHand.faceUp = true;
   events.push({
     type: "ABILITY_ACTIVATED",
     player: action.player,

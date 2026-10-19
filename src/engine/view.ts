@@ -4,6 +4,8 @@
 import {
   PLAYER_IDS,
   type CardInstance,
+  type CounterEvent,
+  type CounterLink,
   type GameState,
   type LeaderState,
   type Mode,
@@ -60,7 +62,7 @@ export interface PlayerView {
   /** Combat en cours (information publique). */
   battle: GameState["battle"];
   /** Fenêtre de contre en cours : événement et contres déclarés (publics : les cartes sont révélées). */
-  counterWindow: GameState["counterWindow"];
+  counterWindow: { event: CounterEvent; chain: CounterLink[] } | null;
   /** Limites d'attaques en cours. */
   attackLimits: GameState["attackLimits"];
   /** Réglages des joueurs. */
@@ -126,7 +128,10 @@ export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
     phase: state.phase,
     pending: pendingFor(state, viewer),
     battle: state.battle ? structuredClone(state.battle) : null,
-    counterWindow: state.counterWindow ? structuredClone(state.counterWindow) : null,
+    // Seulement l'information publique (pas la mécanique interne du moteur).
+    counterWindow: state.counterWindow
+      ? { event: structuredClone(state.counterWindow.event), chain: structuredClone(state.counterWindow.chain) }
+      : null,
     attackLimits: structuredClone(state.attackLimits),
     settings: structuredClone(state.settings),
     result: state.result,

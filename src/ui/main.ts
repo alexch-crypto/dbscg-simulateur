@@ -1,9 +1,11 @@
 // Interface de test dans le navigateur.
 //
-// Deux modes :
+// Trois modes :
 //  - Solo (par défaut) : vous jouez les deux côtés. P1 en bas, P2 en haut, les deux mains
 //    visibles, pas d'écran « passez l'ordinateur ».
 //  - Deux joueurs sur le même écran : chacun ne voit que son jeu, avec un écran de passage.
+//  - En ligne : un joueur crée une room (il est l'hôte, P1, et fait tourner le moteur), l'autre
+//    la rejoint avec le code (P2). L'invité ne reçoit que sa vue et ses coups autorisés.
 //
 // On joue en CLIQUANT SUR LES CARTES : les cartes qui ont une action possible sont surlignées ;
 // un clic affiche leurs actions dans le panneau de droite. Pour choisir des cartes (cartes de
@@ -36,6 +38,8 @@ import {
   type PlayerZonesView,
   type VisibleCard,
 } from "../engine";
+import { GUEST, HOST, OnlineGuest, OnlineHost, type HostMessage } from "../net/online";
+import { hostRoom, joinRoom, normalizeCode, type GuestLink, type HostLink } from "../net/peer";
 import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName } from "./labels";
 import "./style.css";
 
@@ -47,7 +51,7 @@ const freezer = parseCardFile(freezerFile);
 const db = buildCardDatabase([freezer.cards]);
 const ctx: GameContext = { cards: db };
 
-type Mode = "solo" | "hotseat";
+type Mode = "solo" | "hotseat" | "online";
 
 let state: GameState | null = null;
 let seed = 0;
@@ -57,6 +61,15 @@ let log: string[] = [];
 let mode: Mode = "solo";
 /** Réglage des fenêtres de contre de chaque joueur. */
 const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "only_if_playable", P2: "only_if_playable" };
+/** Jeu en ligne : rôle, objets de partie et de connexion, état de la connexion. */
+let onlineHost: OnlineHost | null = null;
+let onlineGuest: OnlineGuest | null = null;
+let hostLink: HostLink | null = null;
+let guestLink: GuestLink | null = null;
+let roomCode = "";
+let netStatus = "";
+/** Réglage des fenêtres de contre du joueur en ligne (par défaut : toujours demander). */
+let myPrompt: CounterPrompt = "always";
 /** Mode deux joueurs : joueur devant l'écran, et écran de passage affiché ou non. */
 let screenOwner: PlayerId = "P1";
 let revealed = false;
@@ -103,10 +116,139 @@ function showSetup(): void {
         <b>Solo</b> — je joue les deux côtés (les deux mains visibles, pas d'écran de passage)</label>
       <label class="setting"><input type="radio" name="mode" data-mode="hotseat" ${mode === "hotseat" ? "checked" : ""}>
         <b>Deux joueurs sur le même écran</b> — chacun ne voit que son jeu</label>
-      <h3>Fenêtres de contre</h3>
+      <label class="setting"><input type="radio" name="mode" data-mode="online" ${mode === "online" ? "checked" : ""}>
+        <b>En ligne</b> — contre un ami, chacun sur son ordinateur</label>
+      ${
+        mode === "online"
+          ? `<h3>Fenêtres de contre</h3>
+      <label class="setting"><input type="checkbox" data-my-prompt ${myPrompt === "always" ? "checked" : ""}>
+        Toujours me demander si je veux contrer
+        <span class="hint">(conseillé en ligne : sinon l'adversaire pourrait deviner que vous avez un contre)</span></label>
+      <div class="online-choice">
+        <button data-host>Créer une room</button>
+        <span>ou</span>
+        <input type="text" placeholder="Code de la room" data-code maxlength="12" value="${esc(roomCode)}">
+        <button data-join>Rejoindre</button>
+      </div>
+      ${netStatus ? `<p class="error">${esc(netStatus)}</p>` : ""}`
+          : `<h3>Fenêtres de contre</h3>
       ${prompt("P1")}${prompt("P2")}
-      <button data-start>Commencer la partie</button>
+      <button data-start>Commencer la partie</button>`
+      }
     </div>`;
+}
+
+/** Salle d'attente en ligne (avant que la partie commence). */
+function showLobby(): void {
+  const isHost = onlineHost !== null;
+  app.innerHTML = `
+    <div class="pass-screen">
+      <h1>${isHost ? "Room créée" : "Connexion à la room"}</h1>
+      ${
+        isHost
+          ? roomCode
+            ? `<p>Donnez ce code à votre adversaire :</p><p class="room-code">${esc(roomCode)}</p>
+               <p class="hint">${esc(netStatus || "En attente de l'adversaire…")}</p>`
+            : `<p class="hint">${esc(netStatus || "Ouverture de la room…")}</p>`
+          : `<p>Code : <b>${esc(roomCode)}</b></p><p class="hint">${esc(netStatus || "Connexion…")}</p>`
+      }
+      <button data-new>Annuler</button>
+    </div>`;
+}
+
+/** Ferme la connexion en ligne en cours (s'il y en a une). */
+function leaveOnline(): void {
+  hostLink?.close();
+  guestLink?.close();
+  hostLink = null;
+  guestLink = null;
+  onlineHost = null;
+  onlineGuest = null;
+  netStatus = "";
+}
+
+/** Crée une room : ce navigateur devient l'hôte (P1) et fait tourner le moteur. */
+function createRoom(): void {
+  leaveOnline();
+  log = [];
+  resetSelection();
+  roomCode = "";
+  onlineHost = new OnlineHost(
+    ctx,
+    freezer.deck!,
+    myPrompt,
+    (msg: HostMessage) => hostLink?.send(msg),
+    (events) => {
+      if (onlineHost?.record) seed = onlineHost.record.seed;
+      addToLog(events);
+      render();
+    },
+  );
+  hostLink = hostRoom({
+    onReady: (code) => {
+      roomCode = code;
+      netStatus = "";
+      render();
+    },
+    onGuestConnected: () => {
+      netStatus = "";
+      if (onlineHost?.state) log.push("(Votre adversaire est de retour.)");
+      render();
+    },
+    onGuestLeft: () => {
+      netStatus = "Votre adversaire s'est déconnecté. Il peut revenir avec le même code.";
+      render();
+    },
+    onMessage: (msg) => onlineHost?.receive(msg),
+    onError: (message) => {
+      netStatus = message;
+      render();
+    },
+  });
+  render();
+}
+
+/** Rejoint une room avec son code : ce navigateur devient l'invité (P2). */
+function joinGame(code: string): void {
+  const clean = normalizeCode(code);
+  if (clean.length < 4) {
+    netStatus = "Entrez le code donné par votre adversaire.";
+    return showSetup();
+  }
+  leaveOnline();
+  log = [];
+  resetSelection();
+  roomCode = clean;
+  onlineGuest = new OnlineGuest(
+    (msg) => guestLink?.send(msg),
+    (events) => {
+      errorMessage = onlineGuest?.lastError ?? "";
+      addToLog(events);
+      render();
+    },
+  );
+  guestLink = joinRoom(clean, {
+    onConnected: () => {
+      netStatus = "";
+      onlineGuest?.hello(freezer.deck!, myPrompt);
+      render();
+    },
+    onClosed: () => {
+      netStatus = "Connexion perdue avec l'hôte.";
+      render();
+    },
+    onMessage: (msg) => onlineGuest?.receive(msg),
+    onError: (message) => {
+      netStatus = message;
+      if (!onlineGuest?.snapshot) {
+        leaveOnline();
+        mode = "online";
+        return showSetup();
+      }
+      render();
+    },
+  });
+  render();
 }
 
 function resetSelection(): void {
@@ -141,7 +283,7 @@ function addToLog(events: GameEvent[]): void {
 }
 
 function act(action: Action): void {
-  if (!state) return;
+  if (!hasGame()) return;
   // Paiement personnalisé : remplace le paiement suggéré par la sélection du joueur.
   if (
     (action.type === "PLAY_CARD" ||
@@ -155,6 +297,19 @@ function act(action: Action): void {
   ) {
     action = { ...action, payment: { energy: [...selectedEnergy], markers: selectedMarkers } };
   }
+  // En ligne : l'hôte applique le coup lui-même ; l'invité l'envoie à l'hôte, qui répondra.
+  if (onlineHost) {
+    const error = onlineHost.actLocal(action);
+    errorMessage = error ?? "";
+    if (!error) resetSelection();
+    return render();
+  }
+  if (onlineGuest) {
+    resetSelection();
+    onlineGuest.act(action);
+    return render();
+  }
+  if (!state) return;
   const r = applyAction(state, action, ctx);
   if (!r.ok) {
     errorMessage = r.error;
@@ -175,10 +330,12 @@ function act(action: Action): void {
 }
 
 function exportGame(): void {
-  const blob = new Blob([JSON.stringify(record, null, 1)], { type: "application/json" });
+  const data = onlineHost?.record ?? record;
+  if (!data) return;
+  const blob = new Blob([JSON.stringify(data, null, 1)], { type: "application/json" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `partie-${seed}-coup${record.actions.length}.json`;
+  link.download = `partie-${seed}-coup${data.actions.length}.json`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -216,8 +373,27 @@ async function importGame(file: File): Promise<void> {
 // Vues
 // ---------------------------------------------------------------------------
 
+/** Une partie est-elle affichable (locale, ou en ligne une fois commencée) ? */
+const hasGame = (): boolean => state !== null || onlineHost?.state != null || onlineGuest?.snapshot != null;
+
+/** En ligne : le joueur de ce navigateur. */
+const onlineMe = (): PlayerId | null => (onlineHost ? HOST : onlineGuest ? GUEST : null);
+
 /** Joueur qui doit décider maintenant (celui dont on affiche les actions). */
-const decider = (): PlayerId => state?.pending?.player ?? state?.turnPlayer ?? "P1";
+function decider(): PlayerId {
+  if (onlineHost?.state) return onlineHost.state.pending?.player ?? onlineHost.state.turnPlayer;
+  if (onlineGuest?.snapshot) return onlineGuest.snapshot.view.pending?.player ?? onlineGuest.snapshot.view.turnPlayer;
+  return state?.pending?.player ?? state?.turnPlayer ?? "P1";
+}
+
+/** Coups autorisés du joueur de cet écran (vide s'il n'a rien à décider). */
+function legalActions(): Action[] {
+  if (onlineHost) return onlineHost.snapshot(HOST)?.actions ?? [];
+  if (onlineGuest) return onlineGuest.snapshot?.actions ?? [];
+  if (!state) return [];
+  if (mode === "solo" || state.pending?.player === screenOwner) return getLegalActions(state, decider(), ctx);
+  return [];
+}
 
 /**
  * Vue affichée. En Solo : la main et les choix de chaque joueur sont visibles (vue du joueur
@@ -225,6 +401,8 @@ const decider = (): PlayerId => state?.pending?.player ?? state?.turnPlayer ?? "
  * du joueur devant l'écran seulement.
  */
 function currentView(): PlayerView {
+  if (onlineHost?.state) return getPlayerView(onlineHost.state, HOST);
+  if (onlineGuest?.snapshot) return onlineGuest.snapshot.view;
   const s = state!;
   if (mode === "hotseat") return getPlayerView(s, screenOwner);
   const main = getPlayerView(s, decider());
@@ -233,7 +411,7 @@ function currentView(): PlayerView {
 }
 
 /** Joueur affiché en bas de l'écran. */
-const bottomPlayer = (): PlayerId => (mode === "solo" ? "P1" : screenOwner);
+const bottomPlayer = (): PlayerId => onlineMe() ?? (mode === "solo" ? "P1" : screenOwner);
 
 // ---------------------------------------------------------------------------
 // Actions rattachées aux cartes
@@ -540,11 +718,11 @@ const button = (a: Action, view: PlayerView, extraClass = "") =>
   `<button class="${extraClass}" data-action="${currentActions.indexOf(a)}">${esc(describeAction(a, view, db))}</button>`;
 
 function actionsPanel(view: PlayerView, info: RenderInfo): string {
-  const s = state!;
   const me = decider();
-  const canSee = mode === "solo" || s.pending?.player === screenOwner;
+  const online = onlineMe();
+  const canSee = online ? view.pending?.player === online : mode === "solo" || view.pending?.player === screenOwner;
   let html = "";
-  if (!s.result && canSee) {
+  if (!view.result && canSee) {
     html += `<p class="prompt">${me} — ${esc(describePending(view.pending))}</p>`;
     const p = view.pending;
     // Cartes regardées (dessus du deck) : affichées comme des cartes cochables.
@@ -583,8 +761,8 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
         }${markers > 0 ? ` · Marqueurs : <input type="number" min="0" max="${markers}" value="${selectedMarkers}" data-markers>` : ""}</p>`;
       }
     }
-  } else if (!s.result) {
-    html += `<p class="prompt">En attente de ${s.pending?.player}.</p>`;
+  } else if (!view.result) {
+    html += `<p class="prompt">En attente de ${view.pending?.player}${online ? " (votre adversaire)" : ""}…</p>`;
   }
   if (errorMessage) html += `<p class="error">Coup refusé : ${esc(errorMessage)}</p>`;
   const concede = currentActions.find((a) => a.type === "CONCEDE");
@@ -593,11 +771,13 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
 }
 
 function render(): void {
-  if (!state) {
-    showSetup();
+  if (!hasGame()) {
+    if (onlineHost || onlineGuest) showLobby();
+    else showSetup();
     return;
   }
-  if (mode === "hotseat" && !revealed && !state.result) {
+  if (onlineGuest) errorMessage = onlineGuest.lastError;
+  if (state && mode === "hotseat" && !revealed && !state.result) {
     app.innerHTML = `
       <div class="pass-screen">
         <h1>Passez l'ordinateur à ${screenOwner}</h1>
@@ -608,7 +788,7 @@ function render(): void {
   }
   const view = currentView();
   const me = decider();
-  currentActions = mode === "solo" || state.pending?.player === screenOwner ? getLegalActions(state, me, ctx) : [];
+  currentActions = legalActions();
   const info: RenderInfo = {
     view,
     actionable: new Set(currentActions.map(anchorOf).filter((x): x is string => x !== null)),
@@ -623,15 +803,22 @@ function render(): void {
     : "";
   app.innerHTML = `
     <header>
-      <div><b>DBS Masters — simulateur</b> · graine ${seed}</div>
+      <div><b>DBS Masters — simulateur</b>${
+        onlineMe() ? ` · en ligne (room ${esc(roomCode)}, vous êtes ${onlineMe()})` : ` · graine ${seed}`
+      }</div>
       <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
         <button data-new>Nouvelle partie</button>
-        <button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>
-        <label class="file-button" title="Recharge une partie exportée">Charger<input type="file" accept=".json,application/json" data-import hidden></label>
+        ${onlineGuest ? "" : `<button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>`}
+        ${
+          onlineMe()
+            ? ""
+            : `<label class="file-button" title="Recharge une partie exportée">Charger<input type="file" accept=".json,application/json" data-import hidden></label>`
+        }
       </div>
     </header>
     ${result}
+    ${netStatus ? `<div class="net-status">${esc(netStatus)}</div>` : ""}
     <main>
       <div class="board">
         ${playerArea(view.players[top], info, true)}
@@ -668,7 +855,7 @@ function render(): void {
 app.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log],[data-zpile]",
+    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log],[data-zpile],[data-host],[data-join]",
   );
   if (!el) return;
   if (el.dataset["zpile"] !== undefined) {
@@ -693,7 +880,13 @@ app.addEventListener("click", (event) => {
   }
   if (el.dataset["export"] !== undefined) return exportGame();
   if (el.dataset["start"] !== undefined) return newGame();
+  if (el.dataset["host"] !== undefined) return createRoom();
+  if (el.dataset["join"] !== undefined) {
+    const input = app.querySelector<HTMLInputElement>("[data-code]");
+    return joinGame(input?.value ?? "");
+  }
   if (el.dataset["new"] !== undefined) {
+    leaveOnline();
     state = null;
     return showSetup();
   }
@@ -707,7 +900,7 @@ app.addEventListener("click", (event) => {
     return render();
   }
   const slot = el.dataset["slot"];
-  if (slot === undefined || !state) return;
+  if (slot === undefined || !hasGame()) return;
   const view = currentView();
   // 1) Décision « choisissez des cartes » : on coche / décoche.
   const pickable = pickables(view);
@@ -736,10 +929,13 @@ app.addEventListener("click", (event) => {
 
 app.addEventListener("change", (event) => {
   const el = event.target as HTMLInputElement;
-  if (el.dataset["prompt"] !== undefined) {
+  if (el.dataset["myPrompt"] !== undefined) {
+    myPrompt = el.checked ? "always" : "only_if_playable";
+  } else if (el.dataset["prompt"] !== undefined) {
     counterPrompt[el.dataset["prompt"] as PlayerId] = el.checked ? "always" : "only_if_playable";
   } else if (el.dataset["mode"] !== undefined) {
     mode = el.dataset["mode"] as Mode;
+    netStatus = "";
     // Deux joueurs : par défaut, on demande toujours (pour ne rien révéler à l'adversaire).
     const prompt: CounterPrompt = mode === "hotseat" ? "always" : "only_if_playable";
     counterPrompt.P1 = prompt;
@@ -751,6 +947,11 @@ app.addEventListener("change", (event) => {
     selectedMarkers = Math.max(0, Number(el.value) || 0);
     render();
   }
+});
+
+app.addEventListener("keydown", (event) => {
+  const el = event.target as HTMLInputElement;
+  if (el.dataset["code"] !== undefined && event.key === "Enter") joinGame(el.value);
 });
 
 showSetup();

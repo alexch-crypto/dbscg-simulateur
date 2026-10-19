@@ -115,3 +115,9 @@ button.danger { color: var(--error); }
 .card.mini.zpile { background: #3b3b4a; color: #fff; cursor: pointer; }
 .card.mini.zpile .mini-combo { color: #cfcfe0; }
 .cards.zdeck-open { flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+
+/* Jeu en ligne */
+.online-choice { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.online-choice input { font: inherit; padding: 8px; width: 140px; text-transform: uppercase; text-align: center; }
+.room-code { font-size: 36px; font-weight: 700; letter-spacing: 6px; margin: 8px 0; user-select: all; }
+.net-status { background: #fff4e5; border-bottom: 1px solid #f0b46b; padding: 6px 16px; }
