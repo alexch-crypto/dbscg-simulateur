@@ -1,0 +1,990 @@
+{
+  "_info": {
+    "source": "Texte français relu sur les proxies du joueur (Proxies — Régio Online EU Sunday - Yaw 10th). Règles : manuel officiel DBS Masters.",
+    "verifier": "Les champs dont la valeur commence par '?' ou listés dans 'a_verifier' n'ont pas pu être lus avec certitude sur les images.",
+    "langue_texte": "fr",
+    "format_effets": "Voir LISEZMOI-cartes.md. Les cartes déjà décrites dans freezer.json (BT10-088, EB1-037, BT25-141, BT29-107) ne sont pas répétées ici."
+  },
+
+  "deck": {
+    "leader": "BT31-041",
+    "main": {
+      "BT10-088": 4, "BT11-065": 4, "BT21-079": 2, "BT21-097": 1, "BT23-081": 2, "BT24-140": 1,
+      "BT31-043": 4, "BT31-044": 4, "BT31-045": 2, "BT31-046": 3, "BT31-047": 4,
+      "BT31-049": 3, "BT31-050": 2, "BT31-051": 3, "BT31-052": 4, "BT31-053": 3, "BT31-054": 3,
+      "BT31-145": 1, "EB1-037": 3, "P-619": 1
+    },
+    "side": {
+      "BT10-075": 1, "BT14-073": 2, "BT19-150": 2, "BT25-092": 2, "DB1-057": 2, "DB2-143": 2, "EX19-12": 2, "P-672": 2
+    },
+    "z_deck": {
+      "BT22-058": 1, "BT24-058": 1, "BT25-141": 1, "BT26-064": 1, "BT27-048": 1, "BT29-107": 1, "BT31-042": 3, "EX23-21": 1
+    },
+    "_note": "Main deck = 54 cartes, deck Z = 10 cartes. Le Side Deck (15 cartes) ne sert qu'entre les manches : ses cartes ne sont pas décrites ici."
+  },
+
+  "cards": [
+    {
+      "id": "BT31-041",
+      "type": "leader",
+      "front": {
+        "name": "Son Goku SS4 et Vegeta SS4",
+        "colors": ["green"],
+        "power": 10000,
+        "character": ["Son Goku (GT)", "Vegeta (GT)"],
+        "traits": ["Saiyan"],
+        "era": "Les Dragons Maléfiques",
+        "keywords": [],
+        "abilities": [
+          {
+            "kind": "auto",
+            "trigger": { "event": "attacks", "who": "this" },
+            "cost": [{ "do": "discard", "count": 1 }],
+            "effect": [
+              { "do": "look_top_deck", "count": 5,
+                "pick": { "up_to": 2, "filter_any": [
+                  { "trait": "Saiyan", "mono_color": "green" },
+                  { "type": "unison", "color_cost": 2, "mono_color": "green" }
+                ], "to": "hand", "reveal": true },
+                "then": "shuffle_deck" }
+            ],
+            "text": "Auto. Défaussez une carte de votre main : Quand cette carte attaque, regardez jusqu'à cinq cartes du dessus de votre deck, rajoutez à votre main jusqu'à un total de deux cartes «Saiyan» exclusivement vertes ou Unisson avec un coût de couleur de 2 exclusivement vertes, puis mélangez votre deck."
+          },
+          {
+            "kind": "awaken",
+            "condition": [{ "check": "any_of", "of": [
+              { "check": "life_at_most", "value": 4 },
+              { "check": "all_of", "of": [
+                { "check": "energy_count", "min": 2 },
+                { "check": "control_unison", "filter": { "colors_any": ["green"], "color_cost": 2 } }
+              ] }
+            ] }],
+            "effect": [
+              { "do": "draw", "count": 1 },
+              { "do": "set_active", "target": { "zone": "energy", "owner": "self", "up_to": 1 } },
+              { "do": "life_to_hand_until", "value": 6 }
+            ],
+            "text": "Éveil — Quand votre total de points de vie est de 4 ou moins, ou que vous avez deux Énergies ou plus et une Unisson verte avec un coût de couleur de 2 en jeu : Piochez une carte, passez jusqu'à une de vos Énergies en mode Action et rajoutez à votre main des cartes de vos points de vie jusqu'à avoir 6 points de vie."
+          }
+        ]
+      },
+      "back": {
+        "name": "Gogeta SS4, Vaniteux",
+        "colors": ["green"],
+        "power": 15000,
+        "character": ["Gogeta (GT)"],
+        "traits": ["Saiyan"],
+        "era": "Les Dragons Maléfiques",
+        "keywords": [],
+        "abilities": [
+          {
+            "kind": "auto",
+            "trigger": { "event": "you_activate_union" },
+            "limits": { "once_per_turn": true },
+            "effect": [{ "do": "draw", "count": 1 }],
+            "text": "Auto. / Une fois par tour — Quand vous activez une Capacité Union, piochez une carte."
+          },
+          {
+            "kind": "auto",
+            "trigger": { "event": "attacks", "who": "this" },
+            "effect": [{ "do": "draw", "count": 1 }],
+            "text": "Auto. — Quand cette carte attaque, piochez une carte."
+          },
+          {
+            "kind": "activate", "timing": "main",
+            "limits": { "once_per_turn": true },
+            "cost": [{ "do": "move_to_drop", "target": { "owner": "self", "zone": "battle", "count": 1, "filter": { "character": "Gogeta (GT)", "mono_color": "green" } } }],
+            "effect": [
+              { "do": "play_from", "zone": "drop", "up_to": 1, "filter": { "character": "Son Goku (GT)", "mono_color": "green", "cost": 5, "power": 20000 } },
+              { "do": "play_from", "zone": "drop", "up_to": 1, "filter": { "character": "Vegeta (GT)", "mono_color": "green", "cost": 5, "power": 20000 } }
+            ],
+            "text": "Activation : Principale / Une fois par tour — Choisissez un de vos <Gogeta (GT)> exclusivement verts et placez-le dans la Dispersion de son propriétaire : Jouez jusqu'à une carte <Son Goku (GT)> exclusivement verte et <Vegeta (GT)> exclusivement verte de chaque avec des coûts d'énergie de 5 et 20000 de puissance depuis votre Dispersion."
+          }
+        ]
+      }
+    },
+
+    {
+      "id": "BT11-065",
+      "type": "battle",
+      "name": "Great Saiyaman, Conquérant de la Vilenie",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": "?{ green: 1 }" },
+      "power": 10000,
+      "combo": { "cost": 0, "power": 10000 },
+      "character": ["?Son Gohan (adulte)"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "Le Sorcier maléfique Babidi",
+      "keywords": ["super_combo"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "used_in_combo", "who": "this" },
+          "condition": [
+            { "check": "leader_color", "value": "green" },
+            { "check": "life_at_most", "value": 4 },
+            { "check": "all_energy_sources_color", "value": "green" }
+          ],
+          "effect": [
+            { "do": "combo_power_mod", "target": "this", "amount": 10000, "duration": "battle" },
+            { "do": "optional", "cost": [{ "do": "hand_to_deck_bottom", "count": 1 }], "then": [{ "do": "draw", "count": 2 }] }
+          ],
+          "text": "Auto. — Si votre Leader est vert, que votre total de points de vie est de 4 ou moins et que toutes vos sources d'énergie sont vertes : Quand cette carte est utilisée pour une Combo, elle gagne +10000 de puissance de Combo pour toute la durée du combat ; vous pouvez choisir une carte de votre main et la placer au-dessous de votre deck. Si vous faites ainsi, piochez deux cartes."
+        }
+      ],
+      "a_verifier": [
+        "Numéro de carte (BT11-065 lu avec doute), personnage (Son Gohan adulte ?) et orbe du coût.",
+        "Combo : « 0 + ? » mal lu ; 0 / 10000 supposé (habituel pour Super Combo)."
+      ]
+    },
+
+    {
+      "id": "BT21-079",
+      "type": "battle",
+      "name": "Son Goku SS et Son Gohan SS2, Solidarité Père-Fils",
+      "colors": ["green"],
+      "cost": { "total": 8, "specified": { "green": 4 } },
+      "power": 35000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku", "Son Gohan (enfant)"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "L'Androïde Cell",
+      "keywords": ["deflect", "double_strike"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "attacks", "who": "this" },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "ignore_barrier": true } },
+            { "do": "opponent_discards", "count": 1, "chooser": "opponent" }
+          ],
+          "text": "Auto. — Quand cette carte attaque, choisissez jusqu'à une carte de Combat adverse en ignorant la Capacité Barrière et mettez-la KO ; votre adversaire place une carte depuis sa main dans sa Dispersion."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "you_combo_with", "filter": { "character": "Son Goku", "colors_any": ["green"], "combo_cost": 1 } },
+          "limits": { "once_per_turn": true },
+          "condition": [
+            { "check": "your_turn" },
+            { "check": "opponent_life_at_least", "value": 3 },
+            { "check": "this_in_battle" }
+          ],
+          "effect": [{ "do": "opponent_life_to_drop", "count": 1 }],
+          "text": "Auto. / Une fois par tour — Si c'est votre tour, que le total des points de vie de votre adversaire est de 3 ou plus et que cette carte est en combat : Quand vous utilisez un de vos <Son Goku> verts avec un coût de Combo de 1 pour une Combo, votre adversaire place une carte de ses points de vie dans sa Dispersion."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 2 } }],
+          "condition": [
+            { "check": "leader_color", "value": "green" },
+            { "check": "opponent_energy_count", "min": 3 }
+          ],
+          "effect": [
+            { "do": "play_self", "from": "hand" },
+            { "do": "grant_keywords", "target": "this", "keywords": ["barrier"], "duration": "turn" }
+          ],
+          "text": "Activation : Principale / Limite 1 — (vert)(vert), si votre Leader est vert et que votre adversaire a trois Énergies ou plus : Jouez cette carte depuis votre main ; cette carte acquiert Barrière pour tout le tour."
+        }
+      ]
+    },
+
+    {
+      "id": "BT21-097",
+      "type": "extra",
+      "name": "Rage éveillée angoissante",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "limits": { "limit": 1 },
+          "condition": [{ "check": "leader_mono_color", "value": "green" }, { "check": "leader_has_trait", "value": "Saiyan" }],
+          "effect": [
+            { "do": "negate_attack" },
+            { "do": "if", "check": { "life_at_most": 4 }, "then": [
+              { "do": "optional", "cost": [{ "do": "discard", "count": 1 }],
+                "then": [{ "do": "opponent_attack_tax", "rule": "hand_to_z_energy_per_attack", "duration": "turn" }] }
+            ] }
+          ],
+          "text": "Contre : Attaque / Limite 1 — Si votre Leader est un «Saiyan» exclusivement vert : Annulez l'attaque. De plus, quand votre total de points de vie est de 4 ou moins, vous pouvez défausser une carte de votre main. Si vous faites ainsi, votre adversaire ne peut pas attaquer pour tout le tour à moins de rajouter une carte depuis sa main à ses Énergies Z."
+        },
+        {
+          "kind": "permanent",
+          "effect": [{ "do": "counter_alt_cost", "card": "this", "replace_energy_cost_with": [{ "do": "discard", "count": 1, "filter": { "colors_any": ["green"] } }] }],
+          "text": "Permanent — Vous pouvez activer la Capacité Contre de cette carte depuis votre main sans payer son coût d'énergie en défaussant une carte verte de votre main."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "you_activate_counter_of", "who": "this" },
+          "condition": [{ "check": "leader_character_and_color", "character": "Son Gohan (enfant)", "color": "green" }],
+          "effect": [{ "do": "draw", "count": 1 }],
+          "text": "Auto. — Si votre Leader est un <Son Gohan (enfant)> vert : Quand vous activez la Capacité Contre de cette carte depuis votre main, piochez une carte."
+        }
+      ],
+      "a_verifier": ["La 3e capacité ne s'active jamais avec ce Leader."]
+    },
+
+    {
+      "id": "BT23-081",
+      "type": "battle",
+      "name": "Trunks SS2, Chemin vers le Futur",
+      "colors": ["green"],
+      "cost": { "total": 8, "specified": { "green": 4 } },
+      "power": 30000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Trunks (futur)"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "Trunks du Futur",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "attacks", "who": "this" },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "ignore_barrier": true }, "ignore_immortality": true }
+          ],
+          "text": "Auto. — Quand cette carte attaque, choisissez jusqu'à une carte de Combat adverse en ignorant la Capacité Barrière, annulez la Capacité Immortalité et mettez-la KO."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 2 } }],
+          "condition": [{ "check": "leader_color", "value": "green" }, { "check": "energy_count", "min": 3 }],
+          "effect": [
+            { "do": "play_self", "from": "hand" },
+            { "do": "next_extra_z_discount", "reduce": { "specified": { "green": 1 } }, "duration": "turn" }
+          ],
+          "text": "Activation : Principale / Limite 1 — (vert)(vert), si votre Leader est vert et que vous avez trois Énergies ou plus : Jouez cette carte depuis votre main ; pendant le tour, la prochaine fois que vous placez une Extra Z dans votre Zone de Combat, réduisez de (vert) son coût d'énergie."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "set_rest", "target": { "owner": "self", "zone": "battle", "count": 3, "filter": { "token_name": "Terrien" } } }],
+          "condition": [{ "check": "energy_count", "min": 4 }],
+          "effect": [
+            { "do": "power_mod", "target": "this", "amount": 5000, "duration": "turn" },
+            { "do": "grant_keywords", "target": "this", "keywords": ["triple_strike"], "duration": "turn" }
+          ],
+          "text": "Activation : Combat / Une fois par tour — Si vous avez quatre Énergies ou plus et que vous passez trois de vos jetons Terrien en mode Inertie : Cette carte gagne +5000 de puissance et acquiert Triple Frappe pour tout le tour."
+        }
+      ],
+      "a_verifier": ["Pas de jetons Terrien dans ce deck : la 3e capacité ne s'active jamais."]
+    },
+
+    {
+      "id": "BT24-140",
+      "type": "battle",
+      "name": "Polunga, Dragon des Rêves",
+      "colors": ["green"],
+      "cost": { "total": 8, "specified": "?{ green: 1 }" },
+      "power": 40000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Polunga"],
+      "traits": ["Shenron"],
+      "era": "Freezer",
+      "keywords": ["ultimate", "energy_exhaust"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "effect": [{ "do": "cannot_attack", "target": "this" }],
+          "text": "Permanent — Cette carte ne peut pas attaquer."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "cost": [{ "do": "pay_energy", "generic": 2 }],
+          "condition": [{ "check": "leader_color_any", "values": ["green", "yellow"] }, { "check": "energy_count", "min": 3 }],
+          "effect": [
+            { "do": "play_self", "from": "hand" },
+            { "do": "remove_this_at_end_of_turn" }
+          ],
+          "text": "Activation : Principale — (2), si votre Leader est vert ou jaune et que vous avez trois Énergies ou plus : Jouez cette carte depuis votre main et retirez cette carte de la partie à la fin du tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 3 },
+          "effect": [
+            { "do": "choose_one", "options": [
+              { "label": "Piochez une carte ; votre adversaire défausse une carte de sa main.",
+                "steps": [{ "do": "draw", "count": 1 }, { "do": "opponent_discards", "count": 1, "chooser": "opponent" }] },
+              { "label": "Choisissez jusqu'à une carte adverse et passez-la en mode Inertie.",
+                "steps": [{ "do": "set_rest", "target": { "owner": "opponent", "zone": ["leader", "battle", "unison", "energy"], "up_to": 1 } }] },
+              { "label": "Gardez une de vos cartes de Combat et une adverse ; toutes les autres vont sous le deck de leur propriétaire.",
+                "steps": [{ "do": "keep_one_each_bottom_rest" }] }
+            ] }
+          ],
+          "text": "Activation : Principale / Limite 3 — Choisissez l'un — • Piochez une carte ; votre adversaire défausse une carte de sa main. • Choisissez jusqu'à une carte adverse et passez-la en mode Inertie. • Choisissez une de vos cartes de Combat et une carte de Combat adverse de chaque en ignorant la Capacité Barrière et placez toutes les autres cartes de Combat au-dessous du deck de leur propriétaire dans l'ordre de votre choix."
+        }
+      ],
+      "a_verifier": ["Couleur(s) et orbes du coût (carte dorée, mal lisible : 1 orbe vert supposé).", "Combo 1 / 10000 lu sur la tranche."]
+    },
+
+    {
+      "id": "BT31-043",
+      "type": "unison",
+      "name": "Pan, Adorable Soutien",
+      "colors": ["green"],
+      "cost": { "total": "X", "specified": { "green": 2 } },
+      "power": 15000,
+      "character": ["Pan"],
+      "traits": ["Saiyan", "Terrien"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["blocker"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "look_top_deck", "count": 5,
+              "pick": { "up_to": 1, "filter": { "trait": "Saiyan", "colors_any": ["green"] }, "to": "hand", "reveal": true },
+              "then": "shuffle_deck" }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, regardez jusqu'à cinq cartes du dessus de votre deck, rajoutez à votre main jusqu'à un «Saiyan» vert, puis mélangez votre deck."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "leaves_unison_area", "who": "this" },
+          "effect": [{ "do": "next_union_discount", "filter": { "zone": "hand", "character": "Gogeta (GT)", "colors_any": ["green"] }, "reduce": { "generic": 1 }, "duration": "turn" }],
+          "text": "Auto. — Quand cette carte quitte une Zone Unisson, jusqu'à la fin de votre tour, la prochaine fois que vous activez la Capacité Union d'un <Gogeta (GT)> vert depuis votre main, réduisez de (1) le coût de la Capacité."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": "-X",
+          "effect": [{ "do": "remove_markers", "target": { "owner": "opponent", "zone": "unison", "up_to": 1 }, "count": "X" }],
+          "text": "[-X] Activation : Principale — Choisissez jusqu'à une Unisson adverse et retirez X marqueurs de celle-ci."
+        }
+      ],
+      "a_verifier": ["Personnage, Origine et Ère de l'Unisson non imprimés lisiblement (Pan / Saiyan, Terrien supposés)."]
+    },
+
+    {
+      "id": "BT31-044",
+      "type": "battle",
+      "name": "Son Goku SS4, Serment de Victoire",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 4 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "power_mod", "target": { "owner": "self", "zone": "leader", "count": 1 }, "amount": 5000, "duration": "turn" },
+            { "do": "power_mod", "target": "this", "amount": 5000, "duration": "turn" },
+            { "do": "if", "check": { "played_from": "drop" }, "then": [
+              { "do": "set_active", "target": { "owner": "self", "zone": ["battle", "leader"], "up_to": 1, "filter": { "colors_any": ["green"] } } }
+            ] }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte est jouée, cette carte et votre Leader gagnent +5000 de puissance pour tout le tour. De plus, si cette carte a été jouée depuis une Dispersion, choisissez jusqu'à une de vos cartes de Combat vertes ou Leader vertes et passez-la en mode Action."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green" }, { "check": "energy_count", "min": 3 }],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale / Limite 1 — (vert), si votre Leader est un <Gogeta (GT)> vert et que vous avez trois Énergies ou plus : Piochez une carte et jouez cette carte depuis votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-045",
+      "type": "battle",
+      "name": "Son Goku SS4, Vaillant en Rouge",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 2 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["blocker"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "at_end_of_turn", "then": [{ "do": "set_active", "target": "this" }] },
+            { "do": "if", "check": { "played_from": "drop" }, "then": [
+              { "do": "grant_keywords", "target": "this", "keywords": ["barrier"], "duration": "until_end_of_opponent_turn" }
+            ] }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, passez-la en mode Action à la fin du tour. De plus, si cette carte a été jouée depuis une Dispersion, elle acquiert Barrière jusqu'à la fin du tour adverse."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green" }, { "check": "energy_count", "min": 2 }],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale / Limite 1 — (vert), si votre Leader est un <Gogeta (GT)> vert et que vous avez deux Énergies ou plus : Piochez une carte et jouez cette carte depuis votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-046",
+      "type": "battle",
+      "name": "Son Goku SS4, Devenir le Plus Fort",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 1 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green", "leader_face": "back" }],
+          "effect": [{ "do": "modify_energy_cost", "target": "this", "zone": "hand", "amount": -4 }],
+          "text": "Permanent — Si votre Leader de côté dos est un <Gogeta (GT)> vert, réduisez de 4 le coût d'énergie de cette carte dans votre main."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "set_rest", "target": "this" },
+            { "do": "look_top_deck", "count": 5,
+              "pick": { "up_to": 1, "filter_any": [
+                { "character": "Vegeta (GT)", "mono_color": "green" },
+                { "character": "Gogeta (GT)", "mono_color": "green" },
+                { "type": "unison", "color_cost": 2, "mono_color": "green" }
+              ], "to": "hand", "reveal": true },
+              "then": "shuffle_deck" },
+            { "do": "at_end_of_turn", "then": [{ "do": "return_to_hand", "target": "this" }] }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, passez-la en mode Inertie, regardez jusqu'à cinq cartes du dessus de votre deck, rajoutez à votre main jusqu'à une carte <Vegeta (GT)> exclusivement verte ou <Gogeta (GT)> exclusivement verte ou Unisson avec un coût de couleur de 2 exclusivement verte, puis mélangez votre deck. À la fin du tour, retournez cette carte dans votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-047",
+      "type": "battle",
+      "name": "Son Goku SS4 et Vegeta SS4, Espoirs entrelacés",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 2 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku (GT)", "Vegeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "play_from", "zone": "deck", "up_to": 1, "filter": { "name": "Pan, Adorable Soutien" }, "markers": 1, "mode": "rest", "then": "shuffle_deck" },
+            { "do": "if", "check": { "played_from": "drop" }, "then": [
+              { "do": "set_active", "target": { "owner": "self", "zone": "unison", "up_to": 1 } }
+            ] }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte est jouée, jouez jusqu'à une {Pan, Adorable Soutien} depuis votre deck avec un marqueur dessus en mode Inertie, puis mélangez votre deck. De plus, si cette carte a été jouée depuis une Dispersion, choisissez jusqu'à une de vos Unissons et passez-la en mode Action."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green" }, { "check": "energy_count", "min": 3 }],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale — (vert), si votre Leader est un <Gogeta (GT)> vert et que vous avez trois Énergies ou plus : Piochez une carte et jouez cette carte depuis votre main."
+        }
+      ],
+      "a_verifier": ["Pas de « Limite » lue sur la 2e capacité."]
+    },
+
+    {
+      "id": "BT31-049",
+      "type": "battle",
+      "name": "Vegeta SS4, Serment de Victoire",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 4 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Vegeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["blocker"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "opponent_discards", "count": 1, "chooser": "opponent" },
+            { "do": "if", "check": { "your_turn": true }, "then": [
+              { "do": "power_mod", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1, "filter_any": [{ "colors_any": ["green"] }, { "character_contains": "GT" }] }, "amount": 10000, "duration": "turn" }
+            ] }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, votre adversaire défausse une carte de sa main. De plus, si c'est votre tour, choisissez jusqu'à une de vos cartes vertes ou incluant <GT> dans son nom de personnage ; elle gagne +10000 de puissance pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main_battle",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "generic": 1 }],
+          "condition": [
+            { "check": "any_of", "of": [{ "check": "leader_color", "value": "green" }, { "check": "leader_character_contains", "value": "GT" }] },
+            { "check": "energy_count", "min": 3 }
+          ],
+          "effect": [{ "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale/Combat / Limite 1 — (1), si votre Leader est vert ou inclut <GT> dans son nom de personnage et que vous avez trois Énergies ou plus : Jouez cette carte depuis votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-050",
+      "type": "battle",
+      "name": "Vegeta SS4, Vaillant en Rouge",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 2 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Vegeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "cost_at_most": 5 } } },
+            { "do": "if", "check": { "played_from": "drop" }, "then": [
+              { "do": "grant_keywords", "target": "this", "keywords": ["critical"], "duration": "turn" }
+            ] }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, choisissez jusqu'à une carte de Combat adverse avec un coût d'énergie de 5 ou moins et mettez-la KO. De plus, si cette carte a été jouée depuis une Dispersion, elle acquiert Coup Critique pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green" }, { "check": "energy_count", "min": 2 }],
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "play_self", "from": "hand" }],
+          "text": "Activation : Principale / Limite 1 — (vert), si votre Leader est un <Gogeta (GT)> vert et que vous avez deux Énergies ou plus : Piochez une carte et jouez cette carte depuis votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-051",
+      "type": "battle",
+      "name": "Vegeta SS4, Devenir le Plus Fort",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 1 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Vegeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": [],
+      "abilities": [
+        { "same_as": "BT31-046", "ability_index": 0 },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [
+            { "do": "set_rest", "target": "this" },
+            { "do": "look_top_deck", "count": 5,
+              "pick": { "up_to": 1, "filter_any": [
+                { "character": "Son Goku (GT)", "mono_color": "green" },
+                { "character": "Gogeta (GT)", "mono_color": "green" },
+                { "type": "unison", "color_cost": 2, "mono_color": "green" }
+              ], "to": "hand", "reveal": true },
+              "then": "shuffle_deck" },
+            { "do": "at_end_of_turn", "then": [{ "do": "return_to_hand", "target": "this" }] }
+          ],
+          "text": "Auto. — Quand cette carte est jouée, passez-la en mode Inertie, regardez jusqu'à cinq cartes du dessus de votre deck, rajoutez à votre main jusqu'à une carte <Son Goku (GT)> exclusivement verte ou <Gogeta (GT)> exclusivement verte ou Unisson avec un coût de couleur de 2 exclusivement verte, puis mélangez votre deck ; à la fin du tour, retournez cette carte dans votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-052",
+      "type": "battle",
+      "name": "Gogeta SS4, la Lumière qui Protège l'Univers",
+      "colors": ["green"],
+      "cost": { "total": 10, "specified": { "green": 5 } },
+      "power": 35000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Gogeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["deflect", "barrier", "dual_attack"],
+      "abilities": [
+        {
+          "kind": "union_fusion",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 2 }, "generic": 1 }, { "do": "draw", "count": 1 }],
+          "materials": [
+            { "character": "Son Goku (GT)", "mono_color": "green" },
+            { "character": "Vegeta (GT)", "mono_color": "green" }
+          ],
+          "text": "Union-Fusion — (vert)(vert)(1), piochez une carte : <Son Goku (GT)> exclusivement vert et <Vegeta (GT)> exclusivement vert."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "opponent_activates_counter" },
+          "limits": { "once_per_turn": true },
+          "effect": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }],
+          "text": "Auto. / Une fois par tour — Quand votre adversaire active une Capacité Contre, il défausse une carte de sa main."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }],
+          "effect": [{ "do": "activate_from_hand", "filter": { "name": "Big Bang Kamehameha" }, "up_to": 1, "timing": "main" }],
+          "text": "Activation : Principale / Limite 1 — (vert) : Activez la Capacité Activation : Principale de jusqu'à un {Big Bang Kamehameha} dans votre main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-053",
+      "type": "extra",
+      "name": "Big Bang Kamehameha",
+      "colors": ["green"],
+      "cost": { "total": 3, "specified": { "green": 3 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "all": true, "ignore_barrier": true } },
+            { "do": "opponent_discards", "count": 1, "chooser": "opponent" },
+            { "do": "grant_keywords", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1, "filter": { "character_only": "Gogeta (GT)" } }, "keywords": ["double_strike"], "duration": "turn" }
+          ],
+          "text": "Activation : Principale / Limite 1 — Choisissez toutes les cartes de Combat adverses en ignorant la Capacité Barrière et mettez-les KO ; votre adversaire défausse une carte de sa main ; choisissez jusqu'à une de vos cartes exclusivement <Gogeta (GT)> ; elle acquiert Double Frappe pour tout le tour."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-054",
+      "type": "extra",
+      "name": "La Puissance du Guerrier Ultime",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "limits": { "limit": 1 },
+          "effect": [{ "do": "draw", "count": 1 }, { "do": "negate_attack" }],
+          "text": "Contre : Attaque / Limite 1 — Piochez une carte et annulez l'attaque."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green" }, { "check": "energy_count", "min": 2 }],
+          "effect": [{ "do": "play_from", "zone": "drop", "up_to": 1, "filter_any": [
+            { "character": "Son Goku (GT)", "mono_color": "green", "cost": 5, "power": 20000 },
+            { "character": "Vegeta (GT)", "mono_color": "green", "cost": 5, "power": 20000 }
+          ] }],
+          "text": "Activation : Principale — Si votre Leader est un <Gogeta (GT)> vert et que vous avez deux Énergies ou plus : Jouez jusqu'à une carte <Son Goku (GT)> exclusivement verte ou <Vegeta (GT)> exclusivement verte avec un coût d'énergie de 5 et 20000 de puissance depuis votre Dispersion."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-145",
+      "type": "unison",
+      "name": "Gogeta SS4, Guerrier ultime",
+      "colors": ["green"],
+      "cost": { "total": "X", "specified": { "green": 3 } },
+      "power": 20000,
+      "character": ["Gogeta (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Les Dragons Maléfiques",
+      "keywords": ["critical", "barrier", "dual_attack"],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "opponent_plays_battle_card" },
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "add_markers", "target": "this", "count": 1 }],
+          "effect": [{ "do": "power_mod", "target": "this", "amount": 10000, "duration": "turn" }],
+          "text": "Auto. / Une fois par tour — Rajoutez un marqueur sur cette carte : Quand une carte de Combat adverse est jouée, cette carte gagne +10000 de puissance pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": -1,
+          "effect": [{ "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "ignore_barrier": true } }],
+          "text": "[-1] Activation : Principale — Choisissez jusqu'à une carte de Combat adverse en ignorant la Capacité Barrière et mettez-la KO."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": -5,
+          "limits": { "limit": 1 },
+          "effect": [{ "do": "deal_damage", "count": 1 }],
+          "text": "[-5] Activation : Principale / Limite 1 — Infligez 1 dégât à votre adversaire."
+        }
+      ],
+      "a_verifier": ["Orbes du coût (3 verts lus) et Ère de l'Unisson."]
+    },
+
+    {
+      "id": "P-619",
+      "type": "battle",
+      "name": "Son Goku SS4, Plan d'Attaque face à un Ennemi inconnu",
+      "colors": ["green"],
+      "cost": { "total": 5, "specified": { "green": 1 } },
+      "power": 20000,
+      "combo": { "cost": 0, "power": 5000 },
+      "character": ["Son Goku (GT)"],
+      "traits": ["Saiyan"],
+      "era": "Baby",
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "counter", "counter_on": "attack",
+          "pays_energy_cost_of_card": true,
+          "effect": [{ "do": "negate_attack" }, { "do": "play_self", "from": "hand" }],
+          "text": "Contre : Attaque — Annulez l'attaque et jouez cette carte."
+        },
+        {
+          "kind": "permanent",
+          "spark": 4,
+          "condition": [{ "check": "leader_color", "value": "green" }],
+          "effect": [{ "do": "modify_energy_cost", "target": "this", "zone": "hand", "amount": -4 }],
+          "text": "Permanent / Étincelle 4 — Si votre Leader est vert, réduisez de 4 le coût d'énergie de cette carte dans votre main."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "played", "who": "this" },
+          "limits": { "limit": 1 },
+          "effect": [
+            { "do": "grant_keywords", "target": { "any_of": [
+              { "owner": "self", "zone": ["leader", "battle", "unison"], "filter": { "trait": "Saiyan", "colors_any": ["green"] } },
+              { "owner": "self", "zone": "battle", "filter": { "type": "z_battle", "colors_any": ["green"] } },
+              { "owner": "opponent", "zone": "battle" }
+            ], "up_to": 2 }, "keywords": ["blocker"], "duration": "turn" }
+          ],
+          "text": "Auto. / Limite 1 — Quand cette carte est jouée, choisissez jusqu'à un total de deux cartes parmi toutes vos cartes «Saiyan» vertes, vos cartes de Combat Z vertes et les cartes de Combat adverses ; elles acquièrent Bloqueur pour tout le tour."
+        }
+      ]
+    },
+
+    {
+      "id": "BT22-058",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Broly SS3, le Tyran",
+      "colors": ["green"],
+      "cost": { "total": 2, "specified": { "green": 2 } },
+      "z_cost": 2,
+      "power": 20000,
+      "character": ["Broly"],
+      "traits": ["Saiyan"],
+      "era": "Spécial",
+      "keywords": ["unique"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "effect": [{ "do": "z_play_alt_cost", "card": "this",
+            "replace_with": [
+              { "do": "move_to_drop", "target": { "owner": "self", "zone": "battle", "count": 1, "filter": { "colors_any": ["green"], "not_keyword": "unique" } } },
+              { "do": "pay_energy", "specified": { "green": 1 } },
+              { "do": "z_energy_to_drop", "count": 1 }
+            ] }],
+          "text": "Permanent — Quand cette carte est jouée depuis votre deck Z, au lieu de payer son coût d'énergie et son coût d'énergie Z, vous pouvez placer une carte verte autre qu'Unique depuis votre Zone de Combat dans votre Dispersion et payer (vert) et un coût d'énergie Z de 1."
+        },
+        {
+          "kind": "auto",
+          "trigger": { "event": "battle_card_to_drop" },
+          "limits": { "once_per_turn": true },
+          "condition": [{ "check": "energy_count", "min": 4 }],
+          "effect": [
+            { "do": "power_mod", "target": "this", "amount": 5000, "duration": "turn" },
+            { "do": "grant_keywords", "target": "this", "keywords": ["double_strike"], "duration": "turn" }
+          ],
+          "text": "Auto. / Une fois par tour — Si vous avez quatre Énergies ou plus : Quand une carte dans une Zone de Combat est placée dans une Dispersion, cette carte gagne +5000 de puissance et acquiert Double Frappe pour tout le tour."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "move_to_drop", "target": { "owner": "self", "zone": "battle", "count": 1, "filter": { "not_keyword": "unique" } } }],
+          "condition": [{ "check": "energy_count", "min": 3 }],
+          "effect": [{ "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1 } }],
+          "text": "Activation : Principale / Une fois par tour — Si vous avez trois Énergies ou plus et que vous placez une carte autre qu'Unique depuis votre Zone de Combat dans votre Dispersion : Choisissez jusqu'à une carte de Combat adverse et mettez-la KO."
+        }
+      ]
+    },
+
+    {
+      "id": "BT24-058",
+      "type": "z_unison",
+      "deck_zone": "z_deck",
+      "name": "Bardock, Aide paternelle",
+      "colors": ["green"],
+      "cost": { "total": "X", "specified": { "green": 2 } },
+      "z_cost": 1,
+      "power": 15000,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "own_blocker_leaves_by_opponent_skill" },
+          "limits": { "once_per_turn": true },
+          "effect": [{ "do": "add_markers", "target": "this", "count": 1 }],
+          "text": "Auto. / Une fois par tour — Quand une de vos cartes de Combat avec la Capacité Bloqueur quitte votre Zone de Combat via une Capacité adverse, rajoutez un marqueur sur cette carte."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": 0,
+          "condition": [{ "check": "leader_color", "value": "green" }],
+          "effect": [
+            { "do": "draw", "count": 1 },
+            { "do": "grant_keywords", "target": { "owner": "self", "zone": "battle", "up_to": 1, "filter_any": [
+              { "trait": "Saiyan", "colors_any": ["green"] }, { "trait": "Terrien", "colors_any": ["green"] }, { "trait": "Habitant de Namek", "colors_any": ["green"] }
+            ] }, "keywords": ["blocker"], "duration": "until_end_of_opponent_turn" }
+          ],
+          "text": "[±0] Activation : Principale — Si votre Leader est vert : Piochez une carte et choisissez jusqu'à une de vos cartes de Combat «Saiyan» vertes, «Terrien» vertes ou «Habitant de Namek» vertes ; la carte acquiert Bloqueur jusqu'à la fin du tour adverse."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": 0,
+          "cost": [{ "do": "z_energy_to_drop", "count": 1 }],
+          "effect": [{ "do": "opponent_discards", "count": 1, "chooser": "opponent" }],
+          "text": "[±0] Activation : Principale — Placez une de vos Énergies Z dans la Dispersion de son propriétaire : Votre adversaire défausse une carte de sa main."
+        }
+      ]
+    },
+
+    {
+      "id": "BT26-064",
+      "type": "z_unison",
+      "deck_zone": "z_deck",
+      "name": "Vegetto SS4, Atteignant une Plus Grande Puissance",
+      "colors": ["green"],
+      "cost": { "total": "X", "specified": { "green": 2 } },
+      "z_cost": 2,
+      "power": 15000,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "attacks", "who": "this" },
+          "effect": [{ "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1 } }],
+          "text": "Auto. — Quand cette carte attaque, choisissez jusqu'à une carte de Combat adverse et mettez-la KO."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": 1,
+          "cost": [{ "do": "hand_to_z_energy", "count": 1, "filter": { "colors_any": ["green"] } }],
+          "effect": [{ "do": "draw", "count": 1 }],
+          "text": "[+1] Activation : Principale — Rajoutez une carte verte depuis votre main à vos Énergies Z : Piochez une carte."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "marker_cost": -2,
+          "effect": [{ "do": "set_active", "target": "this" }],
+          "text": "[-2] Activation : Principale — Passez cette carte en mode Action."
+        }
+      ]
+    },
+
+    {
+      "id": "BT27-048",
+      "type": "z_battle",
+      "deck_zone": "z_deck",
+      "name": "Piccolo, Montée en Puissance",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "z_cost": 2,
+      "power": 10000,
+      "character": ["Piccolo"],
+      "traits": ["Habitant de Namek", "Dieu"],
+      "era": "L'Androïde Cell",
+      "keywords": ["dual_attack"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "link": 3,
+          "effect": [{ "do": "power_mod_static", "target": "this", "amount": 10000 }],
+          "text": "Permanent / Lien 3 — Cette carte gagne +10000 de puissance."
+        },
+        {
+          "kind": "auto",
+          "link": 5, "link_filter": { "type": "battle", "colors_any": ["green"] },
+          "trigger": { "event": "played", "who": "this" },
+          "effect": [{ "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "ignore_barrier": true } }],
+          "text": "Auto. / Lien 5 Carte de combat verte — Quand cette carte est jouée, choisissez jusqu'à une carte de Combat adverse en ignorant la Capacité Barrière et mettez-la KO."
+        }
+      ]
+    },
+
+    {
+      "id": "BT31-042",
+      "type": "z_extra",
+      "deck_zone": "z_deck",
+      "name": "Fusion ultime",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "z_cost": 1,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "auto",
+          "trigger": { "event": "placed_in_battle_area", "who": "this" },
+          "limits": { "limit": 1 },
+          "cost": [{ "do": "discard", "count": 1 }],
+          "effect": [
+            { "do": "search_deck", "up_to": 1, "filter": { "character": "Gogeta (GT)", "mono_color": "green" }, "to": "hand", "then": "shuffle_deck" },
+            { "do": "next_union_discount", "filter": { "zone": "hand", "character": "Gogeta (GT)", "colors_any": ["green"] }, "reduce": { "specified": { "green": 1 } }, "duration": "turn" }
+          ],
+          "text": "Auto. / Limite 1 — Défaussez une carte de votre main : Quand cette carte est placée dans une Zone de Combat, rajoutez à votre main jusqu'à un <Gogeta (GT)> exclusivement vert depuis votre deck, puis mélangez votre deck ; pendant le tour, la prochaine fois que vous activez la Capacité Union d'un <Gogeta (GT)> vert depuis votre main, réduisez de (vert) le coût de la Capacité."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "cost": [{ "do": "remove_from_game", "target": "this" }],
+          "effect": [{ "do": "power_mod", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1, "filter": { "character": "Gogeta (GT)", "colors_any": ["green"] } }, "amount": 10000, "duration": "battle" }],
+          "text": "Activation : Combat — Retirez cette carte de la partie : Choisissez jusqu'à un de vos <Gogeta (GT)> verts ; il gagne +10000 de puissance pour tout le combat."
+        }
+      ]
+    },
+
+    {
+      "id": "EX23-21",
+      "type": "z_extra",
+      "deck_zone": "z_deck",
+      "name": "Ultra Kamehameha Limite, Frappe surpuissante",
+      "colors": ["green"],
+      "cost": { "total": 1, "specified": { "green": 1 } },
+      "z_cost": 1,
+      "keywords": [],
+      "abilities": [
+        {
+          "kind": "activate", "timing": "battle",
+          "cost": [{ "do": "z_energy_to_drop", "count": 1 }, { "do": "remove_from_game", "target": "this" }],
+          "effect": [
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "cost_at_most": 3 } } },
+            { "do": "power_mod", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1 }, "amount": 10000, "duration": "battle" }
+          ],
+          "text": "Activation : Combat — Placez une de vos Énergies Z dans votre Dispersion et retirez cette carte de la partie : Choisissez jusqu'à une carte de Combat adverse avec un coût d'énergie de 3 ou moins, mettez-la KO et choisissez jusqu'à une de vos cartes ; la carte gagne +10000 de puissance pour tout le combat."
+        },
+        {
+          "kind": "activate", "timing": "battle",
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1 } }, { "do": "z_energy_to_drop", "count": 3 }, { "do": "remove_from_game", "target": "this" }],
+          "condition": [{ "check": "leader_color", "value": "green" }],
+          "effect": [
+            { "do": "discard_from_opponent_hand", "count": 1, "chooser": "self", "blind": true },
+            { "do": "ko", "target": { "owner": "opponent", "zone": "battle", "up_to": 1, "filter": { "cost_at_most": 5 } } },
+            { "do": "power_mod", "target": { "owner": "self", "zone": ["leader", "battle", "unison"], "up_to": 1 }, "amount": 15000, "duration": "battle" }
+          ],
+          "text": "Activation : Combat — (vert), si votre Leader est vert, que vous placez trois de vos Énergies Z dans votre Dispersion et que vous retirez cette carte de la partie : Choisissez une carte depuis la main de votre adversaire, défaussez-la, choisissez jusqu'à une carte de Combat adverse avec un coût d'énergie de 5 ou moins, mettez-la KO et choisissez jusqu'à une de vos cartes ; elle gagne +15000 de puissance pour tout le combat."
+        }
+      ]
+    }
+  ]
+}
