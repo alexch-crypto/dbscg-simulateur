@@ -950,8 +950,6 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
     html += `<p class="prompt">En attente de ${view.pending?.player}${online ? " (votre adversaire)" : ""}…</p>`;
   }
   if (errorMessage) html += `<p class="error">Coup refusé : ${esc(errorMessage)}</p>`;
-  const concede = currentActions.find((a) => a.type === "CONCEDE");
-  if (concede) html += `<div class="group"><button class="danger" data-action="${currentActions.indexOf(concede)}">Abandonner</button></div>`;
   return html;
 }
 
@@ -1021,6 +1019,7 @@ function render(): void {
       <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
         <button data-new title="Retour au menu">☰ Menu</button>
+        ${!view.result && currentActions.some((a) => a.type === "CONCEDE") ? `<button class="danger" data-concede title="Abandonner la partie">Abandonner</button>` : ""}
         ${onlineGuest ? "" : `<button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>`}
         ${
           onlineMe()
@@ -1073,9 +1072,15 @@ app.addEventListener("click", (event) => {
     return;
   }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-droppile]",
+    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-droppile],[data-concede]",
   );
   if (!el) return;
+  if (el.dataset["concede"] !== undefined) {
+    // Abandon : toujours confirmé, pour éviter un mauvais clic.
+    const concede = currentActions.find((a) => a.type === "CONCEDE");
+    if (concede && window.confirm("Abandonner la partie ? Votre adversaire gagnera immédiatement.")) act(concede);
+    return;
+  }
   if (el.dataset["cancel"] !== undefined) {
     intent = null;
     selectedEnergy.clear();
