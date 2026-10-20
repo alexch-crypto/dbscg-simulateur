@@ -7,6 +7,7 @@ import { cardSheet, colorDots, esc, KEYWORD_NAMES, TYPE_NAMES } from "./common";
 import { countOf, deckErrors, deckFromFile, deckToFile, newId, type DeckStore, type SavedDeck } from "./decks";
 import { COLOR_NAMES } from "./labels";
 import { applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
+import { clearImages, imageCount, imageUrl, importImages, setImagesEnabled } from "./images";
 
 export type Screen = "home" | "play" | "decks" | "deck-edit" | "cards" | "settings";
 export type Mode = "solo" | "hotseat" | "online";
@@ -85,6 +86,10 @@ function tile(def: CardDefinition, extra = "", attrs = ""): string {
   const power = def.power !== undefined ? `${def.power / 1000}k` : TYPE_NAMES[def.type] ?? def.type;
   const cost = def.cost ? String(def.cost.total) : def.zCost !== undefined ? `Z${def.zCost}` : "";
   const colors = def.front?.colors ?? def.colors;
+  const img = imageUrl(def.id);
+  if (img) {
+    return `<div class="tile with-img color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}"><img src="${img}" alt="${esc(def.name)}" loading="lazy">${extra}</div>`;
+  }
   return `<div class="tile color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}">
     <div class="tile-top">${colorDots(colors)}<span class="tile-cost">${esc(cost)}</span></div>
     <div class="tile-name">${esc(def.name)}</div>
@@ -391,6 +396,15 @@ function settings(host: MenuHost): string {
         Par défaut, toujours demander si je veux contrer
         <span class="hint">Conseillé en ligne : sinon l'adversaire peut deviner que vous avez un contre en main.</span></label>
       <label class="check"><input type="checkbox" data-pref-log ${p.logHidden ? "checked" : ""}> Masquer le journal de la partie</label>
+      <h2>Images des cartes</h2>
+      <p class="hint">Les images restent uniquement dans ce navigateur : elles ne sont jamais envoyées ni publiées.
+        Choisissez les fichiers du dossier <b>images-cartes</b> (nommés par numéro de carte, ex. BT24-056.jpg).</p>
+      <label class="check"><input type="checkbox" data-pref-images ${p.showImages ? "checked" : ""}> Afficher les images des cartes</label>
+      <div class="toolbar">
+        <label class="file-button">Importer des images<input type="file" accept="image/*" multiple data-images-import hidden></label>
+        ${imageCount() > 0 ? `<button class="danger" data-images-clear>Effacer les images (${imageCount()})</button>` : `<span class="muted">Aucune image importée.</span>`}
+        ${ui.message ? `<span class="hint">${esc(ui.message)}</span>` : ""}
+      </div>
     </section>
     ${help()}
   </div>`;
@@ -418,8 +432,10 @@ function help(): string {
     <details open><summary>Jouer une partie</summary>
       <ul>
         <li>Les cartes <span class="hl orange">entourées en orange</span> peuvent agir : cliquez dessus, leurs actions s'affichent à droite.</li>
-        <li>Quand il faut choisir des cartes, elles sont <span class="hl green">entourées en vert</span> : cliquez-les puis « Valider le choix ».</li>
-        <li>Le paiement des coûts est automatique. Pour choisir vous-même vos Énergies : <b>Ctrl + clic</b> sur elles avant de jouer.</li>
+        <li>Quand il faut choisir des cartes, elles sont <span class="hl green">entourées en vert</span> : cliquez-les puis « Valider » dans le bandeau au-dessus du plateau (s'il n'y a qu'une carte possible, elle est déjà choisie).</li>
+        <li>Pour attaquer : cliquez sur votre carte, puis sur la cible <b>entourée en rouge</b>, puis « Valider l'attaque ».</li>
+        <li>Pour payer : si vous avez le choix des Énergies, celles proposées sont déjà cochées ; cliquez sur vos Énergies pour changer, puis « Payer ».</li>
+        <li>Survolez une carte pour lire son texte en entier (avec son image, si vous avez importé les images dans les Paramètres).</li>
         <li>La <b>Dispersion</b> et le <b>Deck Z</b> sont des piles : un clic les ouvre dans le panneau de droite.</li>
         <li>Le <b>journal</b> raconte tout ce qui s'est passé. « Exporter » télécharge la partie (utile pour signaler un bug).</li>
       </ul>
@@ -585,6 +601,15 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
     host.render();
     return true;
   }
+  if (d["imagesClear"] !== undefined) {
+    if (window.confirm("Effacer toutes les images de cartes de ce navigateur ?")) {
+      void clearImages().then(() => {
+        ui.message = "Images effacées.";
+        host.render();
+      });
+    }
+    return true;
+  }
   if (d["galleryClose"] !== undefined) {
     ui.galleryCard = "";
     host.render();
@@ -651,6 +676,16 @@ export function menuInput(el: HTMLInputElement, host: MenuHost, final: boolean):
   } else if (d["prefLog"] !== undefined) {
     prefs.logHidden = el.checked;
     savePrefs(prefs);
+  } else if (d["prefImages"] !== undefined) {
+    prefs.showImages = el.checked;
+    setImagesEnabled(el.checked);
+    savePrefs(prefs);
+  } else if (d["imagesImport"] !== undefined && el.files && el.files.length > 0) {
+    void importImages(el.files).then((n) => {
+      ui.message = `${n} image(s) importée(s).`;
+      host.render();
+    });
+    return true;
   } else if (d["deckImport"] !== undefined && el.files?.[0]) {
     void el.files[0].text().then((text) => {
       const deck = deckFromFile(text);

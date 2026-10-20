@@ -48,6 +48,7 @@ import { cardSheet, colorDots, costText, esc, isVisible, KEYWORD_NAMES } from ".
 import { DeckStore, type SavedDeck } from "./decks";
 import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
 import { applyTheme, loadPrefs, savePrefs } from "./prefs";
+import { imageUrl, loadImages, setImagesEnabled } from "./images";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,7 @@ const ctx: GameContext = { cards: db };
 /** Préférences du joueur (pseudo, thème...) et ses decks, mémorisés dans le navigateur. */
 const prefs = loadPrefs();
 applyTheme(prefs.theme);
+setImagesEnabled(prefs.showImages);
 const decks = new DeckStore([
   { id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true },
   { id: "gogeta-base", name: "Gogeta GT (deck de base)", list: gogeta.deck!, builtIn: true },
@@ -229,6 +231,8 @@ function joinGame(code: string, deck: SavedDeck, prompt: CounterPrompt): void {
   if (clean.length < 4) {
     netStatus = "Entrez le code donné par votre adversaire.";
     return showMenu();
+// Images des cartes enregistrées dans ce navigateur : on redessine une fois chargées.
+void loadImages().then(() => render());
   }
   leaveOnline();
   // Une partie en ligne remplace la partie locale éventuellement en cours.
@@ -365,7 +369,9 @@ document.addEventListener("mouseover", (event) => {
     preview.classList.remove("shown");
     return;
   }
-  preview.innerHTML = cardSheet(def);
+  const img = imageUrl(cid, el?.dataset["back"] === "1");
+  preview.innerHTML = img ? `<img class="preview-img" src="${img}" alt="">${cardSheet(def)}` : cardSheet(def);
+  preview.classList.toggle("with-img", !!img);
   preview.classList.add("shown");
 });
 document.addEventListener("mousemove", (event) => {
@@ -674,7 +680,7 @@ function cardBox(c: CardView, info: RenderInfo, position?: string): string {
   const cost = def?.cost ? `${def.cost.total}` : "";
   const power = def?.power !== undefined ? `${def.power / 1000}k` : def?.type === "extra" ? "Extra" : "";
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" data-cid="${esc(c.cardId)}">
+    <div class="${classes.join(" ")}${artStyle(c.cardId) ? " has-img" : ""}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" data-cid="${esc(c.cardId)}"${artStyle(c.cardId)}>
       <div class="mini-top">${colorDots(def?.colors ?? [])}<span class="mini-cost">${cost}</span></div>
       <div class="mini-name">${esc(def?.name ?? c.cardId)}</div>
       <div class="mini-power">${power}${def?.combo ? ` <span class="mini-combo">+${def.combo.power / 1000}k</span>` : ""}${
@@ -698,11 +704,19 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
     ...gestureClasses(leader.uid, info),
   ];
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" data-cid="${esc(leader.z?.cardId ?? leader.cardId)}">
+    <div class="${classes.join(" ")}${artStyle(leader.z?.cardId ?? leader.cardId, !leader.z && leader.side === "back") ? " has-img" : ""}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" data-cid="${esc(leader.z?.cardId ?? leader.cardId)}"${
+      !leader.z && leader.side === "back" ? ` data-back="1"` : ""
+    }${artStyle(leader.z?.cardId ?? leader.cardId, !leader.z && leader.side === "back")}>
       <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.z ? "Leader Z" : leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
       <div class="mini-name">${esc(face?.name ?? leader.cardId)}</div>
       <div class="mini-power">${(face?.power ?? 0) / 1000}k</div>
     </div>`;
+}
+
+/** Fond d'une carte miniature : son illustration (si le joueur a importé les images). */
+function artStyle(cardId: string, back = false): string {
+  const url = imageUrl(cardId, back);
+  return url ? ` style="background-image: linear-gradient(transparent 35%, rgba(0,0,0,.8)), url('${url}')"` : "";
 }
 
 /** Une zone sur UNE ligne : si elle déborde, elle défile horizontalement. */

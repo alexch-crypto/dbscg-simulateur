@@ -311,3 +311,13 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .toast.danger { border-color: #e5484d; }
 .toast.leaving { opacity: 0; }
 @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }
+
+/* ---------------------------------------------------------------- Images des cartes */
+.card.mini.has-img { background-size: cover; background-position: center 22%; color: #fff; text-shadow: 0 1px 2px #000; border-color: #0008; }
+.card.mini.has-img .mini-combo { color: #ddd; }
+.card.mini.has-img.rest { filter: brightness(0.8); }
+.tile.with-img { padding: 0; height: auto; aspect-ratio: 63 / 88; overflow: hidden; border-left-width: 1px; }
+.tile.with-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile-grid:has(.tile.with-img) { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.preview.with-img { width: 300px; max-height: 92vh; }
+.preview-img { width: 100%; border-radius: 8px; display: block; margin-bottom: 6px; }

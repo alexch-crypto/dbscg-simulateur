@@ -13,10 +13,12 @@ export interface Prefs {
   counterPrompt: CounterPrompt;
   /** Journal de la partie masqué. */
   logHidden: boolean;
+  /** Afficher les images des cartes importées (si le joueur en a importé). */
+  showImages: boolean;
 }
 
 const KEY = "dbscg.prefs";
-const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false };
+const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true };
 
 export function loadPrefs(): Prefs {
   try {
@@ -28,6 +30,7 @@ export function loadPrefs(): Prefs {
       theme: raw.theme === "auto" || raw.theme === "light" || raw.theme === "dark" ? raw.theme : DEFAULTS.theme,
       counterPrompt: raw.counterPrompt === "only_if_playable" ? "only_if_playable" : DEFAULTS.counterPrompt,
       logHidden: typeof raw.logHidden === "boolean" ? raw.logHidden : oldLog === "1",
+      showImages: typeof raw.showImages === "boolean" ? raw.showImages : DEFAULTS.showImages,
     };
   } catch {
     return { ...DEFAULTS };
