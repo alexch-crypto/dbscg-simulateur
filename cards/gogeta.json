@@ -274,8 +274,8 @@
       "id": "BT24-140",
       "type": "battle",
       "name": "Polunga, Dragon des Rêves",
-      "colors": ["green"],
-      "cost": { "total": 8, "specified": "?{ green: 1 }" },
+      "colors": ["green", "yellow"],
+      "cost": { "total": 8, "specified": { "green": 1, "yellow": 1 } },
       "power": 40000,
       "combo": { "cost": 1, "power": 10000 },
       "character": ["Polunga"],
@@ -313,8 +313,7 @@
           ],
           "text": "Activation : Principale / Limite 3 — Choisissez l'un — • Piochez une carte ; votre adversaire défausse une carte de sa main. • Choisissez jusqu'à une carte adverse et passez-la en mode Inertie. • Choisissez une de vos cartes de Combat et une carte de Combat adverse de chaque en ignorant la Capacité Barrière et placez toutes les autres cartes de Combat au-dessous du deck de leur propriétaire dans l'ordre de votre choix."
         }
-      ],
-      "a_verifier": ["Couleur(s) et nombre d'orbes du coût (carte dorée : vert, 1 orbe supposé)."]
+      ]
     },
 
     {
@@ -720,8 +719,7 @@
           "effect": [{ "do": "deal_damage", "count": 1 }],
           "text": "[-5] Activation : Principale / Limite 1 — Infligez 1 dégât à votre adversaire."
         }
-      ],
-      "a_verifier": ["Nombre d'orbes verts du coût (3 supposés)."]
+      ]
     },
 
     {
