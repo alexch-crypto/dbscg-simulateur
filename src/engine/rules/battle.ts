@@ -191,6 +191,8 @@ export function declareAttack(
   s.pending = null;
   // « Ne peut pas attaquer à moins de ... à chaque fois » : coût supplémentaire de la déclaration
   // d'attaque, payé juste après avoir passé l'attaquant en mode Inertie (décision du joueur).
+  // « Une de ses cartes » sans précision : n'importe laquelle (Leader, Combat, Unisson, Énergie).
+  // C'est un coût, pas un choix fait par un effet adverse : [Barrière] ne l'empêche pas.
   const taxes = attackTaxes(s, player);
   if (taxes.length > 0) {
     const steps: EffectStep[] = taxes.map((t) =>
