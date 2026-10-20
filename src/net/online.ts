@@ -22,18 +22,18 @@ import {
   type PlayerView,
 } from "../engine";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const HOST: PlayerId = "P1";
 export const GUEST: PlayerId = "P2";
 
 /** Messages de l'invité vers l'hôte. */
 export type GuestMessage =
-  | { t: "hello"; version: number; deck: DeckList; counterPrompt: CounterPrompt }
+  | { t: "hello"; version: number; deck: DeckList; counterPrompt: CounterPrompt; name?: string }
   | { t: "action"; action: Action };
 
 /** Messages de l'hôte vers l'invité. */
 export type HostMessage =
-  | { t: "update"; you: PlayerId; view: PlayerView; actions: Action[]; events: GameEvent[] }
+  | { t: "update"; you: PlayerId; view: PlayerView; actions: Action[]; events: GameEvent[]; names?: Record<PlayerId, string> }
   | { t: "error"; message: string };
 
 /** Ce dont l'interface a besoin pour afficher la partie d'un joueur. */
@@ -46,6 +46,8 @@ export interface Snapshot {
 export class OnlineHost {
   state: GameState | null = null;
   record: GameRecord | null = null;
+  /** Pseudos des joueurs (vide = pas de pseudo). */
+  names: Record<PlayerId, string> = { P1: "", P2: "" };
 
   constructor(
     private readonly ctx: GameContext,
@@ -66,7 +68,7 @@ export class OnlineHost {
 
   private sendUpdate(events: GameEvent[]): void {
     const snap = this.snapshot(GUEST);
-    if (snap) this.send({ t: "update", you: GUEST, ...snap, events });
+    if (snap) this.send({ t: "update", you: GUEST, ...snap, events, names: { ...this.names } });
   }
 
   /** Un message de l'invité arrive. */
@@ -74,6 +76,7 @@ export class OnlineHost {
     const msg = raw as GuestMessage | null;
     if (!msg || typeof msg !== "object") return;
     if (msg.t === "hello") {
+      if (typeof msg.name === "string") this.names[GUEST] = msg.name.slice(0, 20);
       if (msg.version !== PROTOCOL_VERSION) {
         this.send({ t: "error", message: "version du simulateur différente : rechargez la page des deux côtés" });
         return;
@@ -130,14 +133,15 @@ export class OnlineGuest {
   snapshot: Snapshot | null = null;
   you: PlayerId = GUEST;
   lastError = "";
+  names: Record<PlayerId, string> = { P1: "", P2: "" };
 
   constructor(
     private readonly send: (msg: GuestMessage) => void,
     private readonly onChange: (events: GameEvent[]) => void,
   ) {}
 
-  hello(deck: DeckList, counterPrompt: CounterPrompt): void {
-    this.send({ t: "hello", version: PROTOCOL_VERSION, deck, counterPrompt });
+  hello(deck: DeckList, counterPrompt: CounterPrompt, name = ""): void {
+    this.send({ t: "hello", version: PROTOCOL_VERSION, deck, counterPrompt, ...(name ? { name } : {}) });
   }
 
   act(action: Action): void {
@@ -151,6 +155,7 @@ export class OnlineGuest {
     if (msg.t === "update") {
       this.you = msg.you;
       this.snapshot = { view: msg.view, actions: msg.actions };
+      if (msg.names) this.names = { ...msg.names };
       this.lastError = "";
       this.onChange(msg.events);
     } else if (msg.t === "error") {

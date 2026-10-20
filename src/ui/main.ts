@@ -1,6 +1,6 @@
-// Interface de test dans le navigateur.
+// Interface dans le navigateur : les menus (menus.ts) puis la partie.
 //
-// Trois modes :
+// Trois modes de partie :
 //  - Solo (par défaut) : vous jouez les deux côtés. P1 en bas, P2 en haut, les deux mains
 //    visibles, pas d'écran « passez l'ordinateur ».
 //  - Deux joueurs sur le même écran : chacun ne voit que son jeu, avec un écran de passage.
@@ -41,6 +41,10 @@ import {
 import { GUEST, HOST, OnlineGuest, OnlineHost, type HostMessage } from "../net/online";
 import { hostRoom, joinRoom, normalizeCode, type GuestLink, type HostLink } from "../net/peer";
 import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName } from "./labels";
+import { colorDots, costText, esc, isVisible, KEYWORD_NAMES } from "./common";
+import { DeckStore, type SavedDeck } from "./decks";
+import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
+import { applyTheme, loadPrefs, savePrefs } from "./prefs";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -51,7 +55,12 @@ const freezer = parseCardFile(freezerFile);
 const db = buildCardDatabase([freezer.cards]);
 const ctx: GameContext = { cards: db };
 
-type Mode = "solo" | "hotseat" | "online";
+/** Préférences du joueur (pseudo, thème...) et ses decks, mémorisés dans le navigateur. */
+const prefs = loadPrefs();
+applyTheme(prefs.theme);
+const decks = new DeckStore([{ id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true }]);
+/** Decks et réglages de la dernière partie locale (pour « Rejouer »). */
+let lastLocal: { decks: Record<PlayerId, SavedDeck>; prompts: Record<PlayerId, CounterPrompt> } | null = null;
 
 let state: GameState | null = null;
 let seed = 0;
@@ -59,8 +68,6 @@ let seed = 0;
 let record: GameRecord;
 let log: string[] = [];
 let mode: Mode = "solo";
-/** Réglage des fenêtres de contre de chaque joueur. */
-const counterPrompt: Record<PlayerId, CounterPrompt> = { P1: "only_if_playable", P2: "only_if_playable" };
 /** Jeu en ligne : rôle, objets de partie et de connexion, état de la connexion. */
 let onlineHost: OnlineHost | null = null;
 let onlineGuest: OnlineGuest | null = null;
@@ -68,20 +75,10 @@ let hostLink: HostLink | null = null;
 let guestLink: GuestLink | null = null;
 let roomCode = "";
 let netStatus = "";
-/** Réglage des fenêtres de contre du joueur en ligne (par défaut : toujours demander). */
-let myPrompt: CounterPrompt = "always";
 /** Mode deux joueurs : joueur devant l'écran, et écran de passage affiché ou non. */
 let screenOwner: PlayerId = "P1";
 let revealed = false;
 let errorMessage = "";
-/** Journal masqué (préférence mémorisée dans le navigateur). */
-let logHidden = (() => {
-  try {
-    return localStorage.getItem("dbscg.logHidden") === "1";
-  } catch {
-    return false;
-  }
-})();
 
 /** Carte sélectionnée (ses actions sont affichées dans le panneau). */
 let selectedCard: string | null = null;
@@ -103,41 +100,34 @@ const app = document.getElementById("app")!;
 // Partie : création, coups, export / import
 // ---------------------------------------------------------------------------
 
-function showSetup(): void {
-  const prompt = (p: PlayerId) => `
-    <label class="setting">
-      <input type="checkbox" data-prompt="${p}" ${counterPrompt[p] === "always" ? "checked" : ""}>
-      <b>${p}</b> : toujours me demander si je veux contrer
-      <span class="hint">(décoché : la partie ne s'arrête que si ${p} a un contre jouable)</span>
-    </label>`;
-  app.innerHTML = `
-    <div class="pass-screen">
-      <h1>Nouvelle partie</h1>
-      <p>Freezer contre Freezer.</p>
-      <label class="setting"><input type="radio" name="mode" data-mode="solo" ${mode === "solo" ? "checked" : ""}>
-        <b>Solo</b> — je joue les deux côtés (les deux mains visibles, pas d'écran de passage)</label>
-      <label class="setting"><input type="radio" name="mode" data-mode="hotseat" ${mode === "hotseat" ? "checked" : ""}>
-        <b>Deux joueurs sur le même écran</b> — chacun ne voit que son jeu</label>
-      <label class="setting"><input type="radio" name="mode" data-mode="online" ${mode === "online" ? "checked" : ""}>
-        <b>En ligne</b> — contre un ami, chacun sur son ordinateur</label>
-      ${
-        mode === "online"
-          ? `<h3>Fenêtres de contre</h3>
-      <label class="setting"><input type="checkbox" data-my-prompt ${myPrompt === "always" ? "checked" : ""}>
-        Toujours me demander si je veux contrer
-        <span class="hint">(conseillé en ligne : sinon l'adversaire pourrait deviner que vous avez un contre)</span></label>
-      <div class="online-choice">
-        <button data-host>Créer une room</button>
-        <span>ou</span>
-        <input type="text" placeholder="Code de la room" data-code maxlength="12" value="${esc(roomCode)}">
-        <button data-join>Rejoindre</button>
-      </div>
-      ${netStatus ? `<p class="error">${esc(netStatus)}</p>` : ""}`
-          : `<h3>Fenêtres de contre</h3>
-      ${prompt("P1")}${prompt("P2")}
-      <button data-start>Commencer la partie</button>`
-      }
-    </div>`;
+/** Menus du site (accueil, Jouer, decks, cartes, paramètres). */
+const menuHost: MenuHost = {
+  db,
+  decks,
+  prefs,
+  netStatus: () => netStatus,
+  canResume: () => state !== null && !state.result && !onlineHost && !onlineGuest,
+  resume: () => {
+    inMenu = false;
+    leaveMenus();
+    render();
+  },
+  startLocal: (chosenMode, chosen, prompts) => {
+    mode = chosenMode;
+    lastLocal = { decks: chosen, prompts };
+    newGame();
+  },
+  createRoom: (deck, prompt) => createRoom(deck, prompt),
+  joinRoom: (code, deck, prompt) => joinGame(code, deck, prompt),
+  render: () => showMenu(),
+};
+
+/** true tant que le joueur est dans les menus (et pas sur le plateau). */
+let inMenu = true;
+
+function showMenu(): void {
+  inMenu = true;
+  app.innerHTML = renderMenu(menuHost);
 }
 
 /** Salle d'attente en ligne (avant que la partie commence). */
@@ -170,15 +160,20 @@ function leaveOnline(): void {
 }
 
 /** Crée une room : ce navigateur devient l'hôte (P1) et fait tourner le moteur. */
-function createRoom(): void {
+function createRoom(deck: SavedDeck, prompt: CounterPrompt): void {
   leaveOnline();
+  // Une partie en ligne remplace la partie locale éventuellement en cours.
+  state = null;
+  mode = "online";
+  inMenu = false;
+  leaveMenus();
   log = [];
   resetSelection();
   roomCode = "";
   onlineHost = new OnlineHost(
     ctx,
-    freezer.deck!,
-    myPrompt,
+    deck.list,
+    prompt,
     (msg: HostMessage) => hostLink?.send(msg),
     (events) => {
       if (onlineHost?.record) seed = onlineHost.record.seed;
@@ -186,6 +181,7 @@ function createRoom(): void {
       render();
     },
   );
+  onlineHost.names.P1 = prefs.pseudo;
   hostLink = hostRoom({
     onReady: (code) => {
       roomCode = code;
@@ -211,13 +207,18 @@ function createRoom(): void {
 }
 
 /** Rejoint une room avec son code : ce navigateur devient l'invité (P2). */
-function joinGame(code: string): void {
+function joinGame(code: string, deck: SavedDeck, prompt: CounterPrompt): void {
   const clean = normalizeCode(code);
   if (clean.length < 4) {
     netStatus = "Entrez le code donné par votre adversaire.";
-    return showSetup();
+    return showMenu();
   }
   leaveOnline();
+  // Une partie en ligne remplace la partie locale éventuellement en cours.
+  state = null;
+  mode = "online";
+  inMenu = false;
+  leaveMenus();
   log = [];
   resetSelection();
   roomCode = clean;
@@ -232,7 +233,7 @@ function joinGame(code: string): void {
   guestLink = joinRoom(clean, {
     onConnected: () => {
       netStatus = "";
-      onlineGuest?.hello(freezer.deck!, myPrompt);
+      onlineGuest?.hello(deck.list, prompt, prefs.pseudo);
       render();
     },
     onClosed: () => {
@@ -244,8 +245,9 @@ function joinGame(code: string): void {
       netStatus = message;
       if (!onlineGuest?.snapshot) {
         leaveOnline();
-        mode = "online";
-        return showSetup();
+        netStatus = message;
+        goTo("play");
+        return showMenu();
       }
       render();
     },
@@ -261,15 +263,20 @@ function resetSelection(): void {
 }
 
 function newGame(): void {
+  if (!lastLocal) return showMenu();
   seed = Math.floor(Math.random() * 1_000_000);
-  const decks = { P1: freezer.deck!, P2: freezer.deck! };
-  const result = createGame({ decks, seed, counterPrompt: { ...counterPrompt } }, db);
+  const lists = { P1: lastLocal.decks.P1.list, P2: lastLocal.decks.P2.list };
+  const counterPrompt = { ...lastLocal.prompts };
+  const result = createGame({ decks: lists, seed, counterPrompt }, db);
   if (!result.ok) {
-    app.textContent = `Deck invalide : ${result.errors.join(" ; ")}`;
-    return;
+    netStatus = `Deck invalide : ${result.errors.join(" ; ")}`;
+    return showMenu();
   }
+  inMenu = false;
+  leaveMenus();
+  netStatus = "";
   state = result.state;
-  record = newRecord(seed, decks, { ...counterPrompt });
+  record = newRecord(seed, lists, counterPrompt);
   log = [];
   addToLog(result.events);
   errorMessage = "";
@@ -501,39 +508,6 @@ const paymentPossible = () =>
 // Affichage
 // ---------------------------------------------------------------------------
 
-const esc = (text: string): string =>
-  text.replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]!);
-
-const isVisible = (c: CardView): c is VisibleCard => "uid" in c;
-
-const KEYWORD_NAMES: Record<string, string> = {
-  blocker: "Bloqueur",
-  critical: "Coup Critique",
-  double_strike: "Double Frappe",
-  triple_strike: "Triple Frappe",
-  quadruple_strike: "Quadruple Frappe",
-  dual_attack: "Réplique",
-  tri_attack: "Tri-offensive",
-  energy_exhaust: "Fuite d'énergie",
-  unique: "Unique",
-  ultimate: "Ultimate",
-  super_combo: "Super Combo",
-  deflect: "Déflexion",
-  successor: "Successeur",
-  over_realm: "Espace-temps",
-};
-
-const colorDots = (colors: readonly string[]) =>
-  colors.map((c) => `<span class="dot dot-${c}" title="${COLOR_NAMES[c] ?? c}"></span>`).join("");
-
-function costText(def: CardDefinition): string {
-  if (!def.cost) return "";
-  const orbs = Object.entries(def.cost.specified)
-    .map(([c, n]) => `${n} ${COLOR_NAMES[c] ?? c}`)
-    .join(" + ");
-  return `Coût ${def.cost.total}${orbs ? ` (${orbs})` : ""}`;
-}
-
 interface RenderInfo {
   view: PlayerView;
   actionable: Set<string>;
@@ -619,7 +593,7 @@ function zone(title: string, cards: readonly CardView[], info: RenderInfo, slotP
 function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string {
   const deciding = state?.pending?.player === p.id;
   const head = `<div class="pl-head">
-      <b>${p.id}</b>${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}
+      <b>${playerLabel(p.id)}</b>${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}
       <span class="counter">Deck <b>${p.deckCount}</b></span>
       <span class="counter">Main <b>${p.hand.length}</b></span>
       <span class="counter">Marqueurs <b>${p.energyMarkers}</b></span>
@@ -799,10 +773,18 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
   return html;
 }
 
+/** Nom affiché d'un joueur : son pseudo en ligne s'il en a un. */
+function playerLabel(p: PlayerId): string {
+  const names = onlineHost?.names ?? onlineGuest?.names;
+  const name = names?.[p];
+  return name ? `${esc(name)} (${p})` : p;
+}
+
 function render(): void {
+  if (inMenu) return showMenu();
   if (!hasGame()) {
     if (onlineHost || onlineGuest) showLobby();
-    else showSetup();
+    else showMenu();
     return;
   }
   if (onlineGuest) errorMessage = onlineGuest.lastError;
@@ -826,18 +808,18 @@ function render(): void {
   const bottom = bottomPlayer();
   const top = bottom === "P1" ? "P2" : "P1";
   const result = view.result
-    ? `<div class="result">${view.result.kind === "win" ? `🏆 ${view.result.winner} gagne la partie` : "Match nul"} — ${esc(
+    ? `<div class="result">${view.result.kind === "win" ? `🏆 ${playerLabel(view.result.winner)} gagne la partie` : "Match nul"} — ${esc(
         view.result.reason,
-      )} <button data-new>Nouvelle partie</button></div>`
+      )} ${onlineMe() ? "" : `<button data-replay>Rejouer</button>`} <button data-new>Menu</button></div>`
     : "";
   app.innerHTML = `
     <header>
       <div><b>DBS Masters — simulateur</b>${
-        onlineMe() ? ` · en ligne (room ${esc(roomCode)}, vous êtes ${onlineMe()})` : ` · graine ${seed}`
+        onlineMe() ? ` · en ligne (room ${esc(roomCode)}, vous êtes ${playerLabel(onlineMe()!)})` : ` · graine ${seed}`
       }</div>
       <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
-        <button data-new>Nouvelle partie</button>
+        <button data-new title="Retour au menu">☰ Menu</button>
         ${onlineGuest ? "" : `<button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>`}
         ${
           onlineMe()
@@ -857,10 +839,10 @@ function render(): void {
       </div>
       <aside>
         <div class="actions">${zDeckPanel(view, info)}${dropPanel(view, info)}${cardDetail(view)}${actionsPanel(view, info)}</div>
-        <div class="log ${logHidden ? "collapsed" : ""}">
-          <h3>Journal <button data-toggle-log>${logHidden ? "Afficher" : "Masquer"}</button></h3>
+        <div class="log ${prefs.logHidden ? "collapsed" : ""}">
+          <h3>Journal <button data-toggle-log>${prefs.logHidden ? "Afficher" : "Masquer"}</button></h3>
           ${
-            logHidden
+            prefs.logHidden
               ? ""
               : log
                   .slice(-80)
@@ -883,8 +865,13 @@ function render(): void {
 
 app.addEventListener("click", (event) => {
   const target = event.target as HTMLElement;
+  if (inMenu) {
+    const menuEl = target.closest<HTMLElement>("button, [data-gallery-card], [data-deck-plus], [data-deck-minus]");
+    if (menuEl) menuClick(menuEl, menuHost);
+    return;
+  }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-clear],[data-export],[data-start],[data-validate],[data-slot],[data-toggle-log],[data-zpile],[data-droppile],[data-host],[data-join]",
+    "[data-action],[data-reveal],[data-new],[data-replay],[data-clear],[data-export],[data-validate],[data-slot],[data-toggle-log],[data-zpile],[data-droppile]",
   );
   if (!el) return;
   if (el.dataset["zpile"] !== undefined) {
@@ -898,12 +885,8 @@ app.addEventListener("click", (event) => {
     return render();
   }
   if (el.dataset["toggleLog"] !== undefined) {
-    logHidden = !logHidden;
-    try {
-      localStorage.setItem("dbscg.logHidden", logHidden ? "1" : "0");
-    } catch {
-      // Stockage indisponible : la préférence ne sera simplement pas mémorisée.
-    }
+    prefs.logHidden = !prefs.logHidden;
+    savePrefs(prefs);
     return render();
   }
   if (el.dataset["action"] !== undefined) return act(currentActions[Number(el.dataset["action"])]!);
@@ -913,16 +896,17 @@ app.addEventListener("click", (event) => {
     return;
   }
   if (el.dataset["export"] !== undefined) return exportGame();
-  if (el.dataset["start"] !== undefined) return newGame();
-  if (el.dataset["host"] !== undefined) return createRoom();
-  if (el.dataset["join"] !== undefined) {
-    const input = app.querySelector<HTMLInputElement>("[data-code]");
-    return joinGame(input?.value ?? "");
-  }
+  if (el.dataset["replay"] !== undefined) return newGame();
   if (el.dataset["new"] !== undefined) {
-    leaveOnline();
-    state = null;
-    return showSetup();
+    // Retour au menu. Une partie locale en cours reste en mémoire (« Reprendre ») ; une partie en
+    // ligne se termine (on demande d'abord).
+    const online = onlineHost !== null || onlineGuest !== null;
+    const playing = online && hasGame() && !currentView().result;
+    if (playing && !window.confirm("Quitter la partie en ligne ? La connexion avec votre adversaire sera coupée.")) return;
+    if (online) leaveOnline();
+    if (state?.result) state = null;
+    goTo(online || !state ? "play" : "home");
+    return showMenu();
   }
   if (el.dataset["reveal"] !== undefined) {
     revealed = true;
@@ -961,21 +945,17 @@ app.addEventListener("click", (event) => {
   render();
 });
 
+app.addEventListener("input", (event) => {
+  if (inMenu) menuInput(event.target as HTMLInputElement, menuHost, false);
+});
+
 app.addEventListener("change", (event) => {
   const el = event.target as HTMLInputElement;
-  if (el.dataset["myPrompt"] !== undefined) {
-    myPrompt = el.checked ? "always" : "only_if_playable";
-  } else if (el.dataset["prompt"] !== undefined) {
-    counterPrompt[el.dataset["prompt"] as PlayerId] = el.checked ? "always" : "only_if_playable";
-  } else if (el.dataset["mode"] !== undefined) {
-    mode = el.dataset["mode"] as Mode;
-    netStatus = "";
-    // Deux joueurs : par défaut, on demande toujours (pour ne rien révéler à l'adversaire).
-    const prompt: CounterPrompt = mode === "hotseat" ? "always" : "only_if_playable";
-    counterPrompt.P1 = prompt;
-    counterPrompt.P2 = prompt;
-    showSetup();
-  } else if (el.dataset["import"] !== undefined && el.files?.[0]) {
+  if (inMenu) {
+    menuInput(el, menuHost, true);
+    return;
+  }
+  if (el.dataset["import"] !== undefined && el.files?.[0]) {
     void importGame(el.files[0]);
   } else if (el.dataset["markers"] !== undefined) {
     selectedMarkers = Math.max(0, Number(el.value) || 0);
@@ -985,7 +965,10 @@ app.addEventListener("change", (event) => {
 
 app.addEventListener("keydown", (event) => {
   const el = event.target as HTMLInputElement;
-  if (el.dataset["code"] !== undefined && event.key === "Enter") joinGame(el.value);
+  if (inMenu && el.dataset["code"] !== undefined && event.key === "Enter") {
+    menuInput(el, menuHost, false);
+    document.querySelector<HTMLElement>("[data-join]")?.click();
+  }
 });
 
-showSetup();
+showMenu();

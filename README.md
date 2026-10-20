@@ -5,8 +5,9 @@
 | Dossier | Rôle |
 |---|---|
 | `src/engine/` | Le moteur de règles : uniquement de la logique, aucune interface |
-| `src/ui/` | L'interface de test dans le navigateur (deux joueurs sur le même écran) |
+| `src/ui/` | L'interface dans le navigateur : menus (accueil, Jouer, Mes decks, Cartes, Paramètres) et plateau |
 | `cards/` | Les cartes et les decks, en JSON |
+| `tests/` | Les tests automatiques |
 
 ## Jouer une partie de test
 
@@ -18,7 +19,7 @@ Si vous trouvez un bug, notez la « graine » affichée en haut et ce que vous a
 
 ## Jouer en ligne
 
-1. Les deux joueurs ouvrent le site et choisissent **En ligne**.
+1. Les deux joueurs ouvrent le site et vont dans **Jouer → En ligne**.
 2. L'un clique sur **Créer une room** : un code de 6 caractères s'affiche. Il le donne à l'autre.
 3. L'autre tape le code et clique sur **Rejoindre**.
 
@@ -28,7 +29,15 @@ de voir ; s'il est déconnecté, il peut revenir avec le même code.
 
 La mise en relation passe par le serveur public gratuit de PeerJS ; ensuite, les deux navigateurs
 communiquent directement.
-| `tests/` | Les tests automatiques |
+
+## Menus
+
+- **Jouer** : Solo, deux joueurs sur le même écran, ou en ligne ; chaque joueur choisit son deck.
+- **Mes decks** : le deck Freezer de base (à dupliquer pour le modifier) et vos decks, construits
+  avec vérification des règles en direct. Ils sont enregistrés dans le navigateur ; « Exporter » /
+  « Importer » pour les sauvegarder ou les échanger en fichier.
+- **Cartes** : toutes les cartes, avec recherche et filtres.
+- **Paramètres** : pseudo (affiché en ligne), thème sombre / clair, réglages par défaut, aide.
 
 Les règles suivent le manuel officiel ; chaque règle codée cite son numéro (ex. `// 8-4-6`).
 

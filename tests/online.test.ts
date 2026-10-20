@@ -48,6 +48,14 @@ describe("Jeu en ligne : connexion et début de partie", () => {
     expect(host.state!.settings.counterPrompt).toEqual({ P1: "only_if_playable", P2: "always" });
   });
 
+  it("les pseudos des deux joueurs sont échangés", () => {
+    const { host, guest } = link();
+    host.names.P1 = "Alex";
+    guest.hello(freezer.deck!, "always", "Ami");
+    expect(host.names).toEqual({ P1: "Alex", P2: "Ami" });
+    expect(guest.names).toEqual({ P1: "Alex", P2: "Ami" });
+  });
+
   it("version différente : la partie ne commence pas", () => {
     const { host, guest } = link();
     host.receive({ t: "hello", version: PROTOCOL_VERSION + 1, deck: freezer.deck!, counterPrompt: "always" });
