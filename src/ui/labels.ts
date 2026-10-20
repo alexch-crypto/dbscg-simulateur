@@ -1,6 +1,7 @@
 // Textes en français affichés par l'interface : coups, événements, décisions.
 // Uniquement de l'affichage : aucune règle du jeu ici.
 
+import { abilitiesOf } from "../engine/cards/abilities";
 import type {
   Action,
   CardDatabase,
@@ -153,11 +154,13 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
     case "ACTIVATE": {
       const card = findVisible(view, a.uid);
       const leader = Object.values(view.players).find((p) => p.leader.uid === a.uid)?.leader;
-      const cardId = card?.cardId ?? leader?.cardId ?? "";
+      const cardId = card?.cardId ?? leader?.z?.cardId ?? leader?.cardId ?? "";
       const def = db.get(cardId);
-      const abilities = def?.type === "leader" ? (leader?.side === "back" ? def.back : def.front)?.abilities : def?.abilities;
-      const text = String(abilities?.[a.index]?.["text"] ?? "");
-      return `Activer ${nameOf(view, db, a.uid)}${a.x !== undefined ? ` (X = ${a.x})` : ""} : ${text.slice(0, 90)}${text.length > 90 ? "…" : ""}${
+      const abilities = def?.type === "leader" ? abilitiesOf(db, def, leader?.side) : abilitiesOf(db, def);
+      const text = String(abilities[a.index]?.["text"] ?? "");
+      // « Activation : Principale / Limite 1 — (coût) : effet » : on garde ce qui suit le tiret.
+      const body = text.includes(" — ") ? text.slice(text.indexOf(" — ") + 3) : text;
+      return `Activer${a.x !== undefined ? ` (X = ${a.x})` : ""} : ${body.slice(0, 80)}${body.length > 80 ? "…" : ""}${
         a.payment.energy.length || a.payment.markers ? paymentText(view, db, a.payment.energy, a.payment.markers) : ""
       }`;
     }

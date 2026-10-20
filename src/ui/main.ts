@@ -33,6 +33,7 @@ import {
   type GameRecord,
   type GameState,
   type LeaderState,
+  type PaymentChoice,
   type PlayerId,
   type PlayerView,
   type PlayerZonesView,
@@ -41,7 +42,7 @@ import {
 import { GUEST, HOST, OnlineGuest, OnlineHost, type HostMessage } from "../net/online";
 import { hostRoom, joinRoom, normalizeCode, type GuestLink, type HostLink } from "../net/peer";
 import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName } from "./labels";
-import { colorDots, costText, esc, isVisible, KEYWORD_NAMES } from "./common";
+import { cardSheet, colorDots, costText, esc, isVisible, KEYWORD_NAMES } from "./common";
 import { DeckStore, type SavedDeck } from "./decks";
 import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
 import { applyTheme, loadPrefs, savePrefs } from "./prefs";
@@ -93,6 +94,15 @@ const selectedEnergy = new Set<string>();
 let selectedMarkers = 0;
 /** Coups proposés actuellement (les boutons y font référence par leur position). */
 let currentActions: Action[] = [];
+/**
+ * Geste en cours sur le plateau, avant d'envoyer le coup (on peut encore annuler) :
+ *  - attack : une carte est choisie pour attaquer, on clique sur sa cible ;
+ *  - pay    : on choisit soi-même les Énergies à passer en mode Inertie.
+ */
+type Intent = { kind: "attack"; attacker: string; target: string | null } | { kind: "pay"; action: Paid };
+let intent: Intent | null = null;
+/** Décision pour laquelle les cartes ont déjà été pré-sélectionnées (choix d'une seule carte possible). */
+let preselectedFor = "";
 
 const app = document.getElementById("app")!;
 
@@ -256,6 +266,7 @@ function joinGame(code: string, deck: SavedDeck, prompt: CounterPrompt): void {
 }
 
 function resetSelection(): void {
+  intent = null;
   selectedCard = null;
   picked.clear();
   selectedEnergy.clear();
@@ -286,26 +297,89 @@ function newGame(): void {
   render();
 }
 
+/** Coups de l'adversaire annoncés par une notification en ligne. */
+const TOAST_EVENTS = new Set<GameEvent["type"]>([
+  "PLAY_DECLARED",
+  "CARD_PLAYED_BY_SKILL",
+  "ATTACK_DECLARED",
+  "BLOCKER_DECLARED",
+  "COUNTER_DECLARED",
+  "ABILITY_ACTIVATED",
+  "SUCCESSOR_ACTIVATED",
+  "OVER_REALM_ACTIVATED",
+  "Z_PLAY_DECLARED",
+  "AWAKEN_ACTIVATED",
+  "COMBO",
+  "TOKEN_CREATED",
+]);
+
 function addToLog(events: GameEvent[]): void {
   const view = currentView();
-  for (const e of events) log.push(describeEvent(e, view, db));
+  const me = onlineMe();
+  for (const e of events) {
+    const text = describeEvent(e, view, db);
+    log.push(text);
+    // En ligne : ce que fait l'adversaire, et les dégâts que l'on subit, s'affichent aussi en notification.
+    if (!me || !("player" in e)) continue;
+    if ((e.player !== me && TOAST_EVENTS.has(e.type)) || (e.type === "DAMAGE_DEALT" && e.player === me)) toast(text, e.type === "DAMAGE_DEALT");
+  }
 }
+
+// ---------------------------------------------------------------------------
+// Notifications et aperçu des cartes (hors de #app, qui est redessiné à chaque coup)
+// ---------------------------------------------------------------------------
+
+const toasts = document.createElement("div");
+toasts.className = "toasts";
+document.body.append(toasts);
+
+function toast(text: string, danger = false): void {
+  const el = document.createElement("div");
+  el.className = `toast${danger ? " danger" : ""}`;
+  el.textContent = text;
+  toasts.append(el);
+  setTimeout(() => el.classList.add("leaving"), 3500);
+  setTimeout(() => el.remove(), 4000);
+}
+
+const preview = document.createElement("div");
+preview.className = "preview";
+document.body.append(preview);
+let previewFor = "";
+
+/** Aperçu lisible de la carte survolée (texte complet), placé à côté de la souris. */
+document.addEventListener("mouseover", (event) => {
+  const el = (event.target as HTMLElement).closest<HTMLElement>("[data-cid]");
+  const cid = el?.dataset["cid"] ?? "";
+  if (cid === previewFor) return;
+  previewFor = cid;
+  const def = cid ? db.get(cid) : undefined;
+  if (!def) {
+    preview.classList.remove("shown");
+    return;
+  }
+  preview.innerHTML = cardSheet(def);
+  preview.classList.add("shown");
+});
+document.addEventListener("mousemove", (event) => {
+  if (!preview.classList.contains("shown")) return;
+  const pad = 18;
+  const { innerWidth: w, innerHeight: h } = window;
+  const r = preview.getBoundingClientRect();
+  let x = event.clientX + pad;
+  let y = event.clientY + pad;
+  if (x + r.width > w - 8) x = event.clientX - r.width - pad;
+  if (y + r.height > h - 8) y = Math.max(8, h - r.height - 8);
+  preview.style.left = `${Math.max(8, x)}px`;
+  preview.style.top = `${y}px`;
+});
+document.addEventListener("mousedown", () => {
+  preview.classList.remove("shown");
+  previewFor = "";
+});
 
 function act(action: Action): void {
   if (!hasGame()) return;
-  // Paiement personnalisé : remplace le paiement suggéré par la sélection du joueur.
-  if (
-    (action.type === "PLAY_CARD" ||
-      action.type === "COMBO" ||
-      action.type === "ACTIVATE" ||
-      action.type === "SUCCESSOR" ||
-      action.type === "PLAY_Z" ||
-      action.type === "Z_AWAKEN" ||
-      (action.type === "DECLARE_COUNTER" && !action.alt)) &&
-    (selectedEnergy.size > 0 || selectedMarkers > 0)
-  ) {
-    action = { ...action, payment: { energy: [...selectedEnergy], markers: selectedMarkers } };
-  }
   // En ligne : l'hôte applique le coup lui-même ; l'invité l'envoie à l'hôte, qui répondra.
   if (onlineHost) {
     const error = onlineHost.actLocal(action);
@@ -500,11 +574,47 @@ function pickedAction(view: PlayerView): Action | null {
   }
 }
 
-/** Le joueur qui décide peut-il choisir ses Énergies pour payer ? */
-const paymentPossible = () =>
-  currentActions.some((a) => ["PLAY_CARD", "COMBO", "ACTIVATE", "SUCCESSOR", "DECLARE_COUNTER"].includes(a.type));
+/** Coup qui se paie en Énergies (jouer, activer, combo, contrer...). */
+type Paid = Extract<Action, { payment: PaymentChoice }>;
+const isPaid = (a: Action): a is Paid => "payment" in a;
+const needed = (a: Paid): number => a.payment.energy.length + a.payment.markers;
+
+/** Le joueur a-t-il vraiment le choix des Énergies pour payer ce coup ? */
+function hasPaymentChoice(a: Action, view: PlayerView): a is Paid {
+  if (!isPaid(a) || needed(a) === 0) return false;
+  const p = view.players[a.player];
+  const active = p.energy.filter((c) => isVisible(c) && c.mode === "active").length;
+  return active + p.energyMarkers > needed(a);
+}
+
+/** Un bouton d'action : soit le coup part tout de suite, soit on passe en mode paiement. */
+function startAction(a: Action): void {
+  if (hasPaymentChoice(a, currentView())) {
+    intent = { kind: "pay", action: a };
+    selectedEnergy.clear();
+    for (const uid of a.payment.energy) selectedEnergy.add(uid);
+    selectedMarkers = a.payment.markers;
+    errorMessage = "";
+    return render();
+  }
+  act(a);
+}
+
+/** Cibles possibles d'une attaque avec `attacker`. */
+const attackTargets = (attacker: string): string[] =>
+  currentActions.flatMap((a) => (a.type === "ATTACK" && a.attacker === attacker ? [a.target] : []));
+
+/** Le joueur de cet écran peut-il décider maintenant ? */
+function canDecide(view: PlayerView): boolean {
+  const online = onlineMe();
+  return !view.result && (online ? view.pending?.player === online : mode === "solo" || view.pending?.player === screenOwner);
+}
+
+/** Texte court d'un bouton : le coup, sans le détail du paiement (choisi ensuite). */
+const shortLabel = (a: Action, view: PlayerView): string => describeAction(a, view, db).replace(/ — (payer avec : .*|gratuit)$/, "");
 
 // ---------------------------------------------------------------------------
+// Affichage// ---------------------------------------------------------------------------
 // Affichage
 // ---------------------------------------------------------------------------
 
@@ -512,13 +622,20 @@ interface RenderInfo {
   view: PlayerView;
   actionable: Set<string>;
   pickable: Set<string>;
+  /** Cibles possibles de l'attaque en cours de visée. */
+  targets: Set<string>;
+  /** Énergies qu'on peut cocher pour payer. */
+  payable: Set<string>;
 }
 
-/** Texte d'aide au survol : nom complet et capacités. */
-function hoverText(def: CardDefinition | undefined, cardId: string): string {
-  if (!def) return cardId;
-  const texts = def.abilities.map((a) => String(a["text"] ?? "")).filter(Boolean);
-  return [`${def.name} (${cardId})`, ...texts].join("\n\n");
+/** Classes d'une carte selon le geste en cours (visée, paiement). */
+function gestureClasses(uid: string, info: RenderInfo): string[] {
+  return [
+    info.targets.has(uid) ? "targetable" : "",
+    intent?.kind === "attack" && intent.target === uid ? "targeted" : "",
+    intent?.kind === "attack" && intent.attacker === uid ? "attacking" : "",
+    info.payable.has(uid) ? "payable" : "",
+  ];
 }
 
 /**
@@ -544,11 +661,12 @@ function cardBox(c: CardView, info: RenderInfo, position?: string): string {
     picked.has(id) ? "picked" : "",
     selectedCard === c.uid ? "selected" : "",
     selectedEnergy.has(c.uid) ? "paying" : "",
+    ...gestureClasses(c.uid, info),
   ];
   const cost = def?.cost ? `${def.cost.total}` : "";
   const power = def?.power !== undefined ? `${def.power / 1000}k` : def?.type === "extra" ? "Extra" : "";
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" title="${esc(hoverText(def, c.cardId))}">
+    <div class="${classes.join(" ")}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" data-cid="${esc(c.cardId)}">
       <div class="mini-top">${colorDots(def?.colors ?? [])}<span class="mini-cost">${cost}</span></div>
       <div class="mini-name">${esc(def?.name ?? c.cardId)}</div>
       <div class="mini-power">${power}${def?.combo ? ` <span class="mini-combo">+${def.combo.power / 1000}k</span>` : ""}${
@@ -569,12 +687,10 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
     info.pickable.has(leader.uid) ? "pickable" : "",
     picked.has(leader.uid) ? "picked" : "",
     selectedCard === leader.uid ? "selected" : "",
+    ...gestureClasses(leader.uid, info),
   ];
-  const texts = face?.abilities.map((a) => String(a["text"] ?? "")).filter(Boolean) ?? [];
   return `
-    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" title="${esc(
-      [face?.name ?? "", ...texts].join("\n\n"),
-    )}">
+    <div class="${classes.join(" ")}" data-card="${esc(leader.uid)}" data-slot="${esc(leader.uid)}" data-cid="${esc(leader.z?.cardId ?? leader.cardId)}">
       <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.z ? "Leader Z" : leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
       <div class="mini-name">${esc(face?.name ?? leader.cardId)}</div>
       <div class="mini-power">${(face?.power ?? 0) / 1000}k</div>
@@ -718,14 +834,63 @@ function battleSummary(view: PlayerView): string {
 }
 
 const button = (a: Action, view: PlayerView, extraClass = "") =>
-  `<button class="${extraClass}" data-action="${currentActions.indexOf(a)}">${esc(describeAction(a, view, db))}</button>`;
+  `<button class="${extraClass}" data-action="${currentActions.indexOf(a)}">${esc(shortLabel(a, view))}</button>`;
+
+/**
+ * Bandeau au-dessus du plateau : consigne du geste en cours (cible d'attaque, paiement) ou du
+ * choix de cartes demandé par le moteur, avec Valider / Annuler.
+ */
+function promptBar(view: PlayerView, info: RenderInfo): string {
+  if (!canDecide(view)) return "";
+  const bar = (text: string, buttons: string, extra = "") =>
+    `<div class="prompt-bar"><div class="prompt-text">${text}${extra}</div><div class="prompt-buttons">${buttons}</div></div>`;
+  if (intent?.kind === "attack") {
+    const who = esc(nameOf(view, db, intent.attacker));
+    const text = intent.target
+      ? `⚔ ${who} attaque <b>${esc(nameOf(view, db, intent.target))}</b>`
+      : `⚔ Attaque avec ${who} : cliquez sur la cible (entourée en rouge)`;
+    return bar(text, `<button class="primary" data-confirm ${intent.target ? "" : "disabled"}>Valider l'attaque</button><button data-cancel>Annuler</button>`);
+  }
+  if (intent?.kind === "pay") {
+    const a = intent.action;
+    const n = needed(a);
+    const chosen = selectedEnergy.size + selectedMarkers;
+    const markers = view.players[a.player].energyMarkers;
+    const cost = a.type === "PLAY_CARD" ? cardCostHint(view, a.uid) : "";
+    return bar(
+      `💠 ${esc(shortLabel(a, view))} — choisissez ${n} Énergie(s) à passer en mode Inertie (${chosen}/${n})${cost}`,
+      `<button class="primary" data-confirm ${chosen === n ? "" : "disabled"}>Payer</button><button data-cancel>Annuler</button>`,
+      markers > 0 ? ` · marqueurs Énergie : <input type="number" min="0" max="${markers}" value="${selectedMarkers}" data-markers>` : "",
+    );
+  }
+  const p = view.pending;
+  if (p && PICK_DECISIONS.includes(p.type)) {
+    const { min, max } = pickBounds(view);
+    const n = picked.size;
+    const what = min === max ? `${min}` : `${min} à ${max}`;
+    return bar(
+      `🎯 ${esc(describePending(p))} <span class="muted">(${what} · choisie(s) : ${n})</span>`,
+      `<button class="primary" data-validate ${n >= min && n <= max ? "" : "disabled"}>Valider</button>`,
+    );
+  }
+  return "";
+}
+
+/** Rappel du coût imprimé d'une carte de la main (couleurs à respecter). */
+function cardCostHint(view: PlayerView, uid: string): string {
+  for (const p of Object.values(view.players)) {
+    const c = p.hand.find((x) => isVisible(x) && x.uid === uid);
+    const def = c && isVisible(c) ? db.get(c.cardId) : undefined;
+    if (def?.cost) return ` <span class="muted">(${esc(costText(def))})</span>`;
+  }
+  return "";
+}
 
 function actionsPanel(view: PlayerView, info: RenderInfo): string {
   const me = decider();
   const online = onlineMe();
-  const canSee = online ? view.pending?.player === online : mode === "solo" || view.pending?.player === screenOwner;
   let html = "";
-  if (!view.result && canSee) {
+  if (canDecide(view)) {
     html += `<p class="prompt">${me} — ${esc(describePending(view.pending))}</p>`;
     const p = view.pending;
     // Cartes regardées (dessus du deck) : affichées comme des cartes cochables.
@@ -735,34 +900,29 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
         .join("")}</div></div>`;
     }
     if (p && PICK_DECISIONS.includes(p.type)) {
-      const { min, max } = pickBounds(view);
-      const n = picked.size;
-      const ok = n >= min && n <= max;
-      const what = min === max ? `${min}` : `entre ${min} et ${max}`;
-      html += `<p class="hint">Cliquez sur les cartes surlignées pour en choisir ${what} (choisies : ${n}).</p>`;
-      html += `<button class="primary" data-validate ${ok ? "" : "disabled"}>Valider le choix</button>`;
+      html += `<p class="hint">Cliquez sur les cartes entourées en vert, puis « Valider » dans le bandeau au-dessus du plateau.</p>`;
+    } else if (intent?.kind === "pay") {
+      html += `<p class="hint">Cliquez sur vos Énergies pour choisir celles à utiliser, puis « Payer » dans le bandeau. Celles proposées par défaut sont déjà cochées.</p>`;
     } else {
-      // Actions de la carte sélectionnée.
+      // Actions de la carte sélectionnée (l'attaque se fait en cliquant sur la cible).
       if (selectedCard) {
-        const mine = currentActions.filter((a) => anchorOf(a) === selectedCard);
+        const mine = currentActions.filter((a) => anchorOf(a) === selectedCard && a.type !== "ATTACK");
+        const attacks = attackTargets(selectedCard).length;
         html += `<div class="group"><h3>${esc(nameOf(view, db, selectedCard))}</h3>${
-          mine.length ? mine.map((a) => button(a, view)).join("") : `<p class="hint">Aucune action pour cette carte maintenant.</p>`
+          attacks ? `<p class="hint">⚔ Pour attaquer : cliquez sur la cible entourée en rouge.</p>` : ""
+        }${
+          mine.length
+            ? mine.map((a) => button(a, view)).join("")
+            : attacks
+              ? ""
+              : `<p class="hint">Aucune action pour cette carte maintenant.</p>`
         }</div>`;
       } else if (info.actionable.size > 0) {
-        html += `<p class="hint">Cliquez sur une carte surlignée pour voir ce qu'elle peut faire.</p>`;
+        html += `<p class="hint">Cliquez sur une carte entourée en orange pour voir ce qu'elle peut faire.</p>`;
       }
       // Actions générales (sans carte associée).
       const general = currentActions.filter((a) => anchorOf(a) === null && a.type !== "CONCEDE");
       if (general.length) html += `<div class="group">${general.map((a) => button(a, view, "primary")).join("")}</div>`;
-      if (paymentPossible()) {
-        const custom = selectedEnergy.size > 0 || selectedMarkers > 0;
-        const markers = view.players[me].energyMarkers;
-        html += `<p class="hint">Paiement ${
-          custom
-            ? `<b>choisi</b> : ${selectedEnergy.size} Énergie(s) + ${selectedMarkers} marqueur(s) <button data-clear>Effacer</button>`
-            : "automatique — pour choisir vous-même, cochez vos Énergies avec la touche Ctrl + clic"
-        }${markers > 0 ? ` · Marqueurs : <input type="number" min="0" max="${markers}" value="${selectedMarkers}" data-markers>` : ""}</p>`;
-      }
     }
   } else if (!view.result) {
     html += `<p class="prompt">En attente de ${view.pending?.player}${online ? " (votre adversaire)" : ""}…</p>`;
@@ -798,12 +958,31 @@ function render(): void {
     return;
   }
   const view = currentView();
-  const me = decider();
   currentActions = legalActions();
+  // Un geste dont le coup n'est plus proposé (la situation a changé) est abandonné.
+  if (intent?.kind === "attack" && attackTargets(intent.attacker).length === 0) intent = null;
+  if (intent?.kind === "pay" && !canDecide(view)) intent = null;
+  const pickable = pickables(view);
+  // Nouvelle décision « choisissez des cartes » : si une seule carte est possible (ou si toutes
+  // doivent être prises), elle est pré-sélectionnée ; il ne reste qu'à valider.
+  const decisionKey = canDecide(view) && view.pending && PICK_DECISIONS.includes(view.pending.type) ? JSON.stringify(view.pending) : "";
+  const newDecision = decisionKey !== preselectedFor;
+  if (newDecision) {
+    preselectedFor = decisionKey;
+    picked.clear();
+    if (decisionKey) {
+      const { min, max } = pickBounds(view);
+      if (pickable.size === 1 || (min > 0 && pickable.size === min)) for (const id of [...pickable].slice(0, max)) picked.add(id);
+    }
+  }
   const info: RenderInfo = {
     view,
-    actionable: new Set(currentActions.map(anchorOf).filter((x): x is string => x !== null)),
-    pickable: pickables(view),
+    actionable: intent?.kind === "pay" ? new Set() : new Set(currentActions.map(anchorOf).filter((x): x is string => x !== null)),
+    pickable,
+    targets: new Set(intent?.kind === "attack" ? attackTargets(intent.attacker) : []),
+    payable: new Set(
+      intent?.kind === "pay" ? view.players[intent.action.player].energy.flatMap((c) => (isVisible(c) && c.mode === "active" ? [c.uid] : [])) : [],
+    ),
   };
   const bottom = bottomPlayer();
   const top = bottom === "P1" ? "P2" : "P1";
@@ -832,6 +1011,7 @@ function render(): void {
     ${netStatus ? `<div class="net-status">${esc(netStatus)}</div>` : ""}
     <main>
       <div class="board">
+        ${promptBar(view, info)}
         ${playerArea(view.players[top], info, true)}
         ${battleSummary(view)}
         ${counterSummary(view)}
@@ -854,7 +1034,7 @@ function render(): void {
       </aside>
     </main>`;
   // Quand il faut choisir des cartes, on les amène à l'écran.
-  if (info.pickable.size > 0 && picked.size === 0) {
+  if (info.pickable.size > 0 && newDecision) {
     document.querySelector(".card.pickable")?.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 }
@@ -871,9 +1051,26 @@ app.addEventListener("click", (event) => {
     return;
   }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-replay],[data-clear],[data-export],[data-validate],[data-slot],[data-toggle-log],[data-zpile],[data-droppile]",
+    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-droppile]",
   );
   if (!el) return;
+  if (el.dataset["cancel"] !== undefined) {
+    intent = null;
+    selectedEnergy.clear();
+    selectedMarkers = 0;
+    return render();
+  }
+  if (el.dataset["confirm"] !== undefined) {
+    if (intent?.kind === "attack" && intent.target) {
+      const { attacker, target: aimed } = intent;
+      const a = currentActions.find((x) => x.type === "ATTACK" && x.attacker === attacker && x.target === aimed);
+      if (a) return act(a);
+    }
+    if (intent?.kind === "pay") {
+      return act({ ...intent.action, payment: { energy: [...selectedEnergy], markers: selectedMarkers } });
+    }
+    return;
+  }
   if (el.dataset["zpile"] !== undefined) {
     const owner = el.dataset["zpile"] as PlayerId;
     openZDeck = openZDeck === owner ? null : owner;
@@ -889,7 +1086,7 @@ app.addEventListener("click", (event) => {
     savePrefs(prefs);
     return render();
   }
-  if (el.dataset["action"] !== undefined) return act(currentActions[Number(el.dataset["action"])]!);
+  if (el.dataset["action"] !== undefined) return startAction(currentActions[Number(el.dataset["action"])]!);
   if (el.dataset["validate"] !== undefined) {
     const action = pickedAction(currentView());
     if (action) act(action);
@@ -912,11 +1109,6 @@ app.addEventListener("click", (event) => {
     revealed = true;
     return render();
   }
-  if (el.dataset["clear"] !== undefined) {
-    selectedEnergy.clear();
-    selectedMarkers = 0;
-    return render();
-  }
   const slot = el.dataset["slot"];
   if (slot === undefined || !hasGame()) return;
   const view = currentView();
@@ -933,15 +1125,25 @@ app.addEventListener("click", (event) => {
   }
   const uid = el.dataset["card"];
   if (!uid) return;
-  // 2) Ctrl + clic sur une de ses Énergies : choisir soi-même le paiement.
-  const energyOfDecider = view.players[decider()].energy.some((c) => isVisible(c) && c.uid === uid);
-  if ((event as MouseEvent).ctrlKey && energyOfDecider && paymentPossible()) {
-    if (selectedEnergy.has(uid)) selectedEnergy.delete(uid);
-    else selectedEnergy.add(uid);
+  // 2) Mode paiement : cocher / décocher ses Énergies (les autres cartes ne réagissent pas).
+  if (intent?.kind === "pay") {
+    const mine = view.players[intent.action.player].energy.some((c) => isVisible(c) && c.uid === uid && c.mode === "active");
+    if (mine) {
+      if (selectedEnergy.has(uid)) selectedEnergy.delete(uid);
+      else if (selectedEnergy.size + selectedMarkers < needed(intent.action)) selectedEnergy.add(uid);
+    }
     return render();
   }
-  // 3) Sinon : sélectionner la carte pour voir ses actions.
+  // 3) Visée d'une attaque : un clic sur une cible la choisit (il reste à valider).
+  if (intent?.kind === "attack" && attackTargets(intent.attacker).includes(uid)) {
+    intent.target = intent.target === uid ? null : uid;
+    return render();
+  }
+  // 4) Sinon : sélectionner la carte. Si elle peut attaquer, ses cibles s'allument ; s'il n'y en a
+  // qu'une, elle est déjà visée.
   selectedCard = selectedCard === uid ? null : uid;
+  const targets = selectedCard ? attackTargets(selectedCard) : [];
+  intent = selectedCard && targets.length > 0 ? { kind: "attack", attacker: selectedCard, target: targets.length === 1 ? targets[0]! : null } : null;
   render();
 });
 

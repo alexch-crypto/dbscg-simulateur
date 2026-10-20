@@ -279,3 +279,35 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .hl.green { border: 2px solid var(--green); }
 .lexicon dt { font-weight: 600; margin-top: 8px; }
 .lexicon dd { margin: 2px 0 0 0; color: var(--muted); }
+
+/* ---------------------------------------------------------------- Gestes en partie */
+/* Bandeau de consigne au-dessus du plateau (cible, paiement, choix de cartes). */
+.prompt-bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; justify-content: space-between; background: var(--panel); border: 2px solid var(--accent); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; box-shadow: var(--shadow); }
+.prompt-text { font-weight: 600; }
+.prompt-text input { width: 56px; padding: 2px 4px; }
+.prompt-buttons { display: flex; gap: 8px; }
+.prompt-buttons button { padding: 6px 14px; }
+/* Cible d'attaque possible (rouge), cible choisie, carte qui attaque, Énergie qu'on peut cocher. */
+.card.targetable { border: 2px solid #e5484d; box-shadow: 0 0 0 3px #e5484d40; cursor: crosshair; animation: pulse 1.2s ease-in-out infinite; }
+.card.targeted { outline: 3px solid #e5484d; box-shadow: 0 0 12px 2px #e5484daa; animation: none; }
+.card.attacking { outline: 3px solid var(--orange); }
+.card.payable { border: 2px dashed var(--accent); cursor: pointer; }
+.card.paying { outline: 3px solid var(--accent); box-shadow: 0 0 10px 1px color-mix(in srgb, var(--accent) 60%, transparent); }
+@keyframes pulse { 50% { box-shadow: 0 0 0 5px #e5484d22; } }
+.card.mini { transition: transform 0.15s, box-shadow 0.15s; }
+.card.mini[data-slot]:hover { transform: translateY(-2px); }
+.card.mini.rest[data-slot]:hover { transform: rotate(6deg) translateY(-2px); }
+
+/* Aperçu de la carte survolée. */
+.preview { position: fixed; z-index: 50; width: 320px; max-height: 80vh; overflow: hidden; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); font-size: 12px; display: none; }
+.preview.shown { display: block; }
+.preview .ability { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); }
+.preview .card-name { font-size: 14px; margin-top: 6px; }
+.preview .sheet-face { margin-top: 8px; font-size: 10px; text-transform: uppercase; color: var(--muted); }
+
+/* Notifications (coups de l'adversaire en ligne). */
+.toasts { position: fixed; z-index: 60; top: 56px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; }
+.toast { background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 14px; box-shadow: var(--shadow); font-weight: 600; max-width: 520px; animation: toast-in 0.2s ease-out; transition: opacity 0.4s; }
+.toast.danger { border-color: #e5484d; }
+.toast.leaving { opacity: 0; }
+@keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }

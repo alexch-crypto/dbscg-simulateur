@@ -84,11 +84,8 @@ const topBar = (title: string, back: Screen = "home") =>
 function tile(def: CardDefinition, extra = "", attrs = ""): string {
   const power = def.power !== undefined ? `${def.power / 1000}k` : TYPE_NAMES[def.type] ?? def.type;
   const cost = def.cost ? String(def.cost.total) : def.zCost !== undefined ? `Z${def.zCost}` : "";
-  const texts = (def.type === "leader" ? [...(def.front?.abilities ?? []), ...(def.back?.abilities ?? [])] : def.abilities)
-    .map((a) => String(a["text"] ?? ""))
-    .filter(Boolean);
   const colors = def.front?.colors ?? def.colors;
-  return `<div class="tile color-${colors[0] ?? "none"}" ${attrs} title="${esc([`${def.name} (${def.id})`, ...texts].join("\n\n"))}">
+  return `<div class="tile color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}">
     <div class="tile-top">${colorDots(colors)}<span class="tile-cost">${esc(cost)}</span></div>
     <div class="tile-name">${esc(def.name)}</div>
     <div class="tile-bottom"><span>${esc(power)}</span>${def.combo ? `<span class="muted">+${def.combo.power / 1000}k</span>` : ""}</div>
@@ -265,7 +262,7 @@ function deckLines(part: Record<string, number>, db: CardDatabase, which: "main"
   if (entries.length === 0) return `<p class="empty">vide</p>`;
   return entries
     .map(
-      ({ def, id, n }) => `<div class="deck-line" data-gallery-card="${esc(id)}" title="${esc(def ? `${def.name} (${id})` : id)}">
+      ({ def, id, n }) => `<div class="deck-line" data-gallery-card="${esc(id)}" data-cid="${esc(id)}">
         <span class="n">${n}×</span>${colorDots(def?.colors ?? [])}<span class="cost">${def?.cost ? def.cost.total : def?.zCost !== undefined ? `Z${def.zCost}` : ""}</span>
         <span class="name">${esc(def?.name ?? `${id} (inconnue)`)}</span>
         ${readOnly ? "" : `<button data-deck-minus="${which}:${esc(id)}" title="Retirer un exemplaire">−</button><button data-deck-plus="${which}:${esc(id)}" title="Ajouter un exemplaire">+</button>`}
