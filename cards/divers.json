@@ -1,0 +1,51 @@
+{
+  "_info": {
+    "source": "Cartes isolées demandées par le joueur (hors deck). Texte français traduit depuis la version anglaise.",
+    "format_effets": "Voir LISEZMOI-cartes.md."
+  },
+
+  "cards": [
+    {
+      "id": "DB2-176",
+      "type": "battle",
+      "name": "Xeres et Sawar, Déesse de la Destruction et Ange de l'Univers 2",
+      "colors": ["green", "yellow"],
+      "cost": { "total": 2, "specified": { "green": 1, "yellow": 1 } },
+      "power": 16000,
+      "combo": { "cost": 1, "power": 10000 },
+      "character": ["Xeres", "Sawar"],
+      "traits": ["Dieu", "Univers 2"],
+      "era": "La Survie de l'Univers",
+      "keywords": ["energy_exhaust"],
+      "abilities": [
+        {
+          "kind": "permanent",
+          "effect": [{
+            "do": "on_placed_in_energy",
+            "optional": {
+              "cost": [
+                { "do": "drop_to_warp", "count": 1, "filter": { "colors_any": ["green"] } },
+                { "do": "drop_to_warp", "count": 1, "filter": { "colors_any": ["yellow"] } }
+              ],
+              "then": [{ "do": "negate_own_energy_exhaust" }]
+            }
+          }],
+          "text": "Permanent — Quand vous placez cette carte dans vos Énergies depuis n'importe quelle zone, vous pouvez choisir une carte verte et une carte jaune dans votre Dispersion et les transférer dans votre Dimension parallèle. Si vous faites ainsi, annulez la Capacité Fuite d'énergie de cette carte."
+        },
+        {
+          "kind": "activate", "timing": "main",
+          "limits": { "once_per_turn": true },
+          "cost": [{ "do": "pay_energy", "specified": { "green": 1, "yellow": 1 } }],
+          "effect": [
+            { "do": "play_from", "zone": "hand", "up_to": 2,
+              "filter": { "type": "battle", "colors_any": ["green", "yellow"], "cost_at_most": 2 },
+              "negate_skills": "turn" },
+            { "do": "opponent_discards", "count": 1, "chooser": "opponent" }
+          ],
+          "text": "Activation : Principale / Une fois par tour — (vert)(jaune) : Choisissez jusqu'à deux cartes de Combat vertes ou jaunes avec un coût d'énergie de 2 ou moins dans votre main et jouez-les avec leurs Capacités annulées pour tout le tour ; puis votre adversaire choisit une carte de sa main et la place dans sa Dispersion."
+        }
+      ],
+      "a_verifier": ["Traduction française faite depuis le texte anglais."]
+    }
+  ]
+}

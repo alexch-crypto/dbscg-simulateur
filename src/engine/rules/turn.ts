@@ -10,7 +10,8 @@ import { checkDefeat } from "./defeat";
 import { cardHasKeyword, KW, readyBlockedByEffect } from "./keywords";
 import { forgetCard } from "./zones";
 import { warpAtEndOfTurn } from "./alt-play";
-import { negatesOwnKeyword } from "./permanents";
+import { activePermanentEffects, negatesOwnKeyword } from "./permanents";
+import { startResolution } from "./effects";
 
 /** 7-2 : début du tour de `player`, phase de Recharge jusqu'au choix de l'Énergie. */
 export function startTurn(s: GameState, player: PlayerId, turnNumber: number, events: GameEvent[]): void {
@@ -79,6 +80,26 @@ export function chargeEnergy(
     card!.faceUp = true;
     p.energy.push(card!);
     events.push({ type: "ENERGY_CHARGED", player: action.player, uid: card!.uid, cardId: card!.cardId, mode: card!.mode });
+    // « Quand vous placez cette carte dans vos Énergies, vous pouvez [coût]. Si vous le faites,
+    // annulez sa Fuite d'énergie » (ex. Xeres et Sawar) : le joueur décide, puis la phase principale.
+    const placed = exhaust
+      ? activePermanentEffects(s, action.player, card!, ctx).find((e) => e["do"] === "on_placed_in_energy")
+      : undefined;
+    if (placed) {
+      s.phase = "main";
+      events.push({ type: "PHASE_STARTED", player: s.turnPlayer, phase: "main" });
+      const opt = (placed["optional"] ?? {}) as Record<string, unknown>;
+      startResolution(
+        s,
+        ctx,
+        action.player,
+        { uid: card!.uid, cardId: card!.cardId },
+        [{ do: "optional", cost: opt["cost"] ?? [], then: opt["then"] ?? [] }],
+        { kind: "restore", pending: { type: "MAIN", player: s.turnPlayer } },
+        events,
+      );
+      return null;
+    }
   }
   // 7-2-12 : point de contrôle. 7-2-13 : passez à la phase principale.
   startMainPhase(s, events);

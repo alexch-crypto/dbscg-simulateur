@@ -442,11 +442,17 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
       return false;
     case "play_from": {
       const p = s.players[r.player];
-      const from = step["zone"] as "drop" | "deck";
+      const from = step["zone"] as "drop" | "deck" | "hand";
       for (const uid of uids) {
         const card = p[from].find((c) => c.uid === uid);
         if (!card) continue;
         const mode = (step["mode"] as "rest" | undefined) ?? "active";
+        // « jouez-les avec leurs Capacités annulées pour tout le tour » : annulées avant leur arrivée,
+        // donc leurs [Auto.] « quand cette carte est jouée » ne se déclenchent pas.
+        if (step["negate_skills"] === "turn") {
+          s.effects.push({ uid, kind: "negate_all", untilTurn: s.turnNumber });
+          events.push({ type: "SKILLS_NEGATED", uids: [uid] });
+        }
         if (ctx.cards.get(card.cardId)?.type === "unison") {
           // Unisson jouée par un effet : avec le nombre de marqueurs indiqué (une seule à la fois, 3-11-4).
           p[from].splice(p[from].indexOf(card), 1);
@@ -464,6 +470,16 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
         }
       }
       if (from === "deck" && step["then"] === "shuffle_deck") shuffleDeck(s, r.player, events);
+      return false;
+    }
+    case "drop_to_warp": {
+      const p = s.players[r.player];
+      const moved = uids.map((uid) => p.drop.find((c) => c.uid === uid)).filter((c): c is CardInstance => c !== undefined);
+      for (const c of moved) {
+        p.drop.splice(p.drop.indexOf(c), 1);
+        s.players[c.owner].warp.push(c);
+      }
+      if (moved.length > 0) events.push({ type: "CARDS_TO_WARP", player: r.player, cardIds: moved.map((c) => c.cardId) });
       return false;
     }
     case "hand_to_deck_bottom":
@@ -1155,7 +1171,7 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
     case "play_from": {
       // « Jouez jusqu'à une carte ... depuis votre Dispersion / votre deck » (5-5-3).
       const zone = step["zone"];
-      if (zone !== "drop" && zone !== "deck") break;
+      if (zone !== "drop" && zone !== "deck" && zone !== "hand") break;
       const options: string[] = [];
       for (const card of p[zone]) {
         const type = ctx.cards.get(card.cardId)?.type;
@@ -1173,6 +1189,27 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       // Rien à jouer : on mélange quand même le deck si on y a cherché.
       if (!waiting && options.length === 0 && zone === "deck" && step["then"] === "shuffle_deck") shuffleDeck(s, r.player, events);
       return waiting;
+    }
+
+    case "drop_to_warp": {
+      // « Choisissez une carte ... dans votre Dispersion et transférez-la dans votre Dimension parallèle. »
+      const options: string[] = [];
+      for (const card of p.drop) {
+        const ok = matchesFilter(card, step["filter"], ctx.cards, s);
+        if (ok === null) break;
+        if (ok) options.push(card.uid);
+      }
+      return askOrApply(s, ctx, step, r.player, options, targetCount(step, options.length), events);
+    }
+
+    case "negate_own_energy_exhaust": {
+      // La Fuite d'énergie de cette carte est annulée : elle est placée en mode Action.
+      const card = p.energy.find((c) => c.uid === r.source.uid);
+      if (card && card.mode === "rest") {
+        card.mode = "active";
+        events.push({ type: "CARDS_MODE_CHANGED", uids: [card.uid], mode: "active" });
+      }
+      return false;
     }
 
     case "life_to_hand_until": {
@@ -1382,6 +1419,16 @@ function insertSteps(s: GameState, steps: EffectStep[]): void {
 
 /** Le joueur peut-il payer ce coût (« vous pouvez défausser une carte verte... ») ? */
 function canPay(s: GameState, ctx: GameContext, player: PlayerId, cost: EffectStep[]): boolean {
+  // « une carte verte et une carte jaune dans votre Dispersion » : des cartes DIFFÉRENTES.
+  const fromDrop = cost.filter((c) => c.do === "drop_to_warp");
+  if (fromDrop.length > 0) {
+    const drop = s.players[player].drop;
+    const assign = (i: number, used: Set<string>): boolean => {
+      if (i === fromDrop.length) return true;
+      return drop.some((c) => !used.has(c.uid) && matchesFilter(c, fromDrop[i]!["filter"], ctx.cards, s) === true && assign(i + 1, new Set([...used, c.uid])));
+    };
+    if (!assign(0, new Set())) return false;
+  }
   for (const c of cost) {
     if (c.do === "discard") {
       const options = handOptions(s, ctx, player, c["filter"]);

@@ -16,6 +16,7 @@
 
 import freezerFile from "../../cards/freezer.json";
 import gogetaFile from "../../cards/gogeta.json";
+import diversFile from "../../cards/divers.json";
 import {
   applyAction,
   buildCardDatabase,
@@ -55,7 +56,8 @@ import "./style.css";
 
 const freezer = parseCardFile(freezerFile);
 const gogeta = parseCardFile(gogetaFile);
-const db = buildCardDatabase([freezer.cards, gogeta.cards]);
+const divers = parseCardFile(diversFile);
+const db = buildCardDatabase([freezer.cards, gogeta.cards, divers.cards]);
 const ctx: GameContext = { cards: db };
 
 /** Préférences du joueur (pseudo, thème...) et ses decks, mémorisés dans le navigateur. */
