@@ -1,8 +1,8 @@
 // Effets du deck Freezer qui restaient « non gérés » : chaque carte est testée sur son effet.
 import { describe, expect, it } from "vitest";
-import { applyAction, getLegalActions, type Action, type GameState, type PlayerId } from "../src/engine";
+import { applyAction, buildCardDatabase, getLegalActions, parseCardFile, type Action, type GameContext, type GameState, type PlayerId } from "../src/engine";
 import { powerOf } from "../src/engine/rules/battle";
-import { ctx, give, newMirrorGame, p2Main, play } from "./helpers";
+import { ctx, freezer, give, newMirrorGame, p2Main, play } from "./helpers";
 
 /** Le coup ACTIVATE proposé par le moteur pour une Capacité d'une carte. */
 function activate(s: GameState, player: PlayerId, uid: string, index: number): Action {
@@ -181,6 +181,58 @@ describe("Clones meurtriers (EB1-037) : jeton Meda", () => {
     const r = play(s, playAction);
     expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P2", options: [other.uid] });
     expect((r.state.pending as { options: string[] }).options).not.toContain(token.uid);
+  });
+
+  it("22-10-3-1 : un jeton est « joué » — l'adversaire peut répondre avec un [Contre : Mise en jeu]", () => {
+    // Carte de test : « Activation : Principale — Jouez 1 jeton Meda. »
+    const extra = parseCardFile({
+      cards: [
+        {
+          id: "TEST-TOKEN",
+          type: "battle",
+          name: "Créateur de jeton",
+          colors: ["green"],
+          cost: { total: 1, specified: {} },
+          power: 5000,
+          combo: { cost: 0, power: 5000 },
+          abilities: [
+            {
+              kind: "activate",
+              timing: "main",
+              effect: [{ do: "create_token", token: { name: "Jeton Meda", power: 5000, combo: { cost: 0, power: 5000 } }, count: 1 }],
+              text: "Activation : Principale — Jouez 1 jeton Meda.",
+            },
+          ],
+        },
+      ],
+    });
+    const testCtx: GameContext = { cards: buildCardDatabase([freezer.cards, extra.cards]) };
+    const s = p2Main();
+    s.players.P2.battle.push({ uid: "P2-TT", cardId: "TEST-TOKEN", owner: "P2", mode: "active", faceUp: true });
+    // P1 a Méchant charismatique en main et de quoi le payer (coût 5).
+    const mechant = give(s, "P1", "BT10-075", "hand");
+    for (const id of ["P-223", "BT24-105", "BT24-106", "BT27-080", "BT9-123"]) give(s, "P1", id, "energy");
+    const victim = give(s, "P2", "BT24-105", "battle");
+    const step = (st: GameState, a: Action) => {
+      const r = applyAction(st, a, testCtx);
+      if (!r.ok) throw new Error(r.error);
+      return r;
+    };
+    const activation = getLegalActions(s, "P2", testCtx).find((a) => a.type === "ACTIVATE" && a.uid === "P2-TT")!;
+    let r = step(s, activation);
+    const token = r.state.players.P2.battle.find((c) => c.cardId === "TEST-TOKEN-JETON1")!;
+    expect(r.state.pending).toEqual({ type: "COUNTER_WINDOW", player: "P1", on: "play" });
+    expect(r.state.counterWindow?.event).toMatchObject({ on: "play", cardUid: token.uid });
+    // P1 joue Méchant charismatique et met KO une AUTRE carte (le jeton n'a pas de coût, 19-1-6-1).
+    const declare = getLegalActions(r.state, "P1", testCtx).find((a) => a.type === "DECLARE_COUNTER" && a.uid === mechant.uid)!;
+    r = step(r.state, declare);
+    expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P1" });
+    const options = (r.state.pending as { options: string[] }).options;
+    expect(options).toContain(victim.uid);
+    expect(options).not.toContain(token.uid);
+    r = step(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [victim.uid] });
+    expect(r.state.players.P2.drop.map((c) => c.uid)).toContain(victim.uid);
+    expect(r.state.players.P2.battle.map((c) => c.uid)).toContain(token.uid);
   });
 
   it("19-1-7 : mis KO, le jeton est retiré de la partie (pas de Dispersion)", () => {

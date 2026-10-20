@@ -734,6 +734,13 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
         }
         events.push({ type: "KEYWORDS_GRANTED", uids: created, keywords: [...(granted as string[])] });
       }
+      // 22-10-3-1 / 4-3-2-4 : un jeton est « joué » (décision du joueur) : l'adversaire reçoit une
+      // fenêtre de [Contre : Mise en jeu] (pas pendant une fenêtre déjà en cours, 4-3-2-7).
+      const last = created[created.length - 1];
+      if (last && !s.counterWindow) {
+        openCounterWindow(s, ctx, { on: "play", player: r.player, cardUid: last, cardId: tokenId }, { kind: "run_resolution" }, events);
+        return true;
+      }
       return false;
     }
 
