@@ -95,7 +95,10 @@ let selectedCard: string | null = null;
 /** Deck Z ouvert (son contenu est affiché dans le panneau de droite), ou aucun. */
 let openZDeck: PlayerId | null = null;
 /** Dispersion ouverte dans le panneau de droite (null = fermée). */
-let openDrop: PlayerId | null = null;
+/** Pile ouverte (Dispersion, Dimension parallèle, cartes retirées), sous la forme « P1:warp ». */
+type PileZone = "drop" | "warp" | "removed";
+let openPile: string | null = null;
+const PILE_NAMES: Record<PileZone, string> = { drop: "Dispersion", warp: "Dimension parallèle", removed: "Retirées de la partie" };
 /** Cartes / positions cochées pour une décision « choisissez X cartes ». */
 const picked = new Set<string>();
 /** Paiement personnalisé : Énergies sélectionnées en cliquant dessus, et marqueurs. */
@@ -735,9 +738,6 @@ function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string 
       <span class="counter">Deck <b>${p.deckCount}</b></span>
       <span class="counter">Main <b>${p.hand.length}</b></span>
       <span class="counter">Marqueurs <b>${p.energyMarkers}</b></span>
-      <span class="counter" title="${esc(p.drop.map((c) => (isVisible(c) ? cardName(db, c.cardId) : "?")).join(", "))}">Dispersion <b>${p.drop.length}</b></span>
-      <span class="counter">Dim. parallèle <b>${p.warp.length}</b></span>
-      ${p.removed.length ? `<span class="counter">Retirées <b>${p.removed.length}</b></span>` : ""}
     </div>`;
   const field = `<div class="pl-row">
       <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader, info)}</div></div>
@@ -748,7 +748,7 @@ function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string 
       ${zone("Énergie Z", p.zEnergy, info)}
     </div>`;
   const battle = `<div class="pl-row">${zone("Zone de Combat", p.battle, info, undefined, "grow")}</div>`;
-  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${dropPile(p, info)}${zPile(p, info)}</div>`;
+  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${piles(p, info)}${zPile(p, info)}</div>`;
   // Disposition comme sur une table : la main au bord, la Zone de Combat vers le centre.
   const rows = top ? [head, hand, field, battle] : [head, battle, field, hand];
   return `<section class="player ${deciding ? "deciding" : ""}">${rows.join("")}</section>`;
@@ -766,29 +766,38 @@ function zPile(p: PlayerZonesView, info: RenderInfo): string {
 }
 
 /**
- * Dispersion : une pile ; un clic l'ouvre dans le panneau de droite. Surlignée quand une de ses
- * cartes peut agir (ex. Zarbon, Élite cosmique) ou doit être choisie.
+ * Piles publiques (Dispersion, Dimension parallèle, cartes retirées de la partie) : un clic les
+ * ouvre dans le panneau de droite. Surlignées quand une de leurs cartes peut agir (ex. Zarbon,
+ * Élite cosmique) ou doit être choisie. La pile des cartes retirées n'apparaît que si elle existe.
  */
-function dropPile(p: PlayerZonesView, info: RenderInfo): string {
-  const busy = p.drop.some((c) => info.actionable.has(c.uid) || info.pickable.has(c.uid));
-  const top = p.drop[p.drop.length - 1];
-  const classes = ["card", "mini", "zpile", "droppile", busy ? "actionable" : "", openDrop === p.id ? "selected" : ""];
-  return `<div class="zone"><div class="zone-title">Dispersion</div><div class="cards">
-    <div class="${classes.join(" ")}" data-droppile="${p.id}" title="Cliquer pour ouvrir / fermer la Dispersion">
-      <div class="mini-name">${top ? esc(cardName(db, top.cardId)) : "Dispersion"}</div><div class="mini-power">${p.drop.length} carte(s)</div>
-      <div class="mini-combo">${openDrop === p.id ? "fermer" : "ouvrir"}</div>
+function piles(p: PlayerZonesView, info: RenderInfo): string {
+  return (["drop", "warp", "removed"] as const)
+    .filter((zone) => zone !== "removed" || p.removed.length > 0)
+    .map((zone) => {
+      const cards = p[zone];
+      const busy = cards.some((c) => info.actionable.has(c.uid) || info.pickable.has(c.uid));
+      const open = openPile === `${p.id}:${zone}`;
+      const top = cards[cards.length - 1];
+      const classes = ["card", "mini", "zpile", "droppile", busy ? "actionable" : "", open ? "selected" : ""];
+      return `<div class="zone"><div class="zone-title">${PILE_NAMES[zone]}</div><div class="cards">
+    <div class="${classes.join(" ")}" data-pile="${p.id}:${zone}" title="Cliquer pour ouvrir / fermer : ${PILE_NAMES[zone]}">
+      <div class="mini-name">${top ? esc(cardName(db, top.cardId)) : PILE_NAMES[zone]}</div><div class="mini-power">${cards.length} carte(s)</div>
+      <div class="mini-combo">${open ? "fermer" : "ouvrir"}</div>
     </div></div></div>`;
+    })
+    .join("");
 }
 
-/** Contenu de la Dispersion ouverte (zone publique). S'ouvre d'elle-même s'il faut y choisir une carte. */
-function dropPanel(view: PlayerView, info: RenderInfo): string {
+/** Contenu de la pile ouverte. La Dispersion s'ouvre d'elle-même s'il faut y choisir une carte. */
+function pilePanel(view: PlayerView, info: RenderInfo): string {
   const auto = (["P1", "P2"] as const).find((id) => view.players[id].drop.some((c) => info.pickable.has(c.uid)));
-  const owner = openDrop ?? auto;
-  if (!owner) return "";
-  const p = view.players[owner];
-  const content = p.drop.length > 0 ? [...p.drop].reverse().map((c) => cardBox(c, info)).join("") : `<span class="empty">vide</span>`;
-  return `<div class="detail"><div class="zone-title">Dispersion de ${p.id} (${p.drop.length}) ${
-    openDrop === owner ? `<button data-droppile="${p.id}">Fermer</button>` : ""
+  const key = openPile ?? (auto ? `${auto}:drop` : null);
+  if (!key) return "";
+  const [owner, zone] = key.split(":") as [PlayerId, PileZone];
+  const cards = view.players[owner][zone];
+  const content = cards.length > 0 ? [...cards].reverse().map((c) => cardBox(c, info)).join("") : `<span class="empty">vide</span>`;
+  return `<div class="detail"><div class="zone-title">${PILE_NAMES[zone]} de ${owner} (${cards.length}) ${
+    openPile === key ? `<button data-pile="${key}">Fermer</button>` : ""
   }</div><div class="cards zdeck-open">${content}</div></div>`;
 }
 
@@ -1039,7 +1048,7 @@ function render(): void {
         ${playerArea(view.players[bottom], info, false)}
       </div>
       <aside>
-        <div class="actions">${zDeckPanel(view, info)}${dropPanel(view, info)}${cardDetail(view)}${actionsPanel(view, info)}</div>
+        <div class="actions">${zDeckPanel(view, info)}${pilePanel(view, info)}${cardDetail(view)}${actionsPanel(view, info)}</div>
         <div class="log ${prefs.logHidden ? "collapsed" : ""}">
           <h3>Journal <button data-toggle-log>${prefs.logHidden ? "Afficher" : "Masquer"}</button></h3>
           ${
@@ -1072,7 +1081,7 @@ app.addEventListener("click", (event) => {
     return;
   }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-droppile],[data-concede]",
+    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-pile],[data-concede]",
   );
   if (!el) return;
   if (el.dataset["concede"] !== undefined) {
@@ -1103,9 +1112,9 @@ app.addEventListener("click", (event) => {
     openZDeck = openZDeck === owner ? null : owner;
     return render();
   }
-  if (el.dataset["droppile"] !== undefined) {
-    const owner = el.dataset["droppile"] as PlayerId;
-    openDrop = openDrop === owner ? null : owner;
+  if (el.dataset["pile"] !== undefined) {
+    const key = el.dataset["pile"];
+    openPile = openPile === key ? null : key;
     return render();
   }
   if (el.dataset["toggleLog"] !== undefined) {

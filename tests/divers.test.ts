@@ -52,14 +52,29 @@ describe("Xeres et Sawar (DB2-176)", () => {
       let r = play(s, { type: "CHARGE_ENERGY", player: "P1", uid: "P1-HS" });
       expect(r.state.pending).toMatchObject({ type: "CHOOSE_OPTION", player: "P1" });
       r = play(r.state, { type: "CHOOSE_OPTION", player: "P1", id: "yes" });
-      // Une seule carte possible à chaque choix : elle est choisie d'office.
-      while (r.state.pending?.type === "CHOOSE_CARDS") {
-        const p = r.state.pending;
-        r = play(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [p.options[0]!] });
-      }
+      // Les deux cartes sont choisies en même temps.
+      expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", player: "P1", min: 2, max: 2 });
+      r = play(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [green.uid, yellow!.uid] });
       expect(r.state.players.P1.warp.map((c) => c.uid).sort()).toEqual([green.uid, yellow!.uid].sort());
       expect(r.state.players.P1.energy.find((c) => c.uid === "P1-HS")!.mode).toBe("active");
       expect(r.state.pending).toEqual({ type: "MAIN", player: "P1" });
+    });
+
+    it("une carte vert-jaune ne compte qu'une fois : il faut une verte ET une jaune différentes", () => {
+      const { s, green } = setup(false);
+      // Dispersion : une verte (Zarbon) + une seule vert-jaune (Anilaza).
+      const both = give(s, "P1", "BT9-123", "drop");
+      const other = give(s, "P1", "P-223", "drop"); // une 2e verte
+      let r = play(s, { type: "CHARGE_ENERGY", player: "P1", uid: "P1-HS" });
+      r = play(r.state, { type: "CHOOSE_OPTION", player: "P1", id: "yes" });
+      // Deux vertes : refusé (pas de jaune).
+      const bad = applyAction(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [green.uid, other.uid] }, ctx);
+      expect(bad.ok).toBe(false);
+      if (!bad.ok) expect(bad.error).toContain("une de chaque");
+      // Verte + vert-jaune : accepté.
+      r = play(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [green.uid, both.uid] });
+      expect(r.state.players.P1.warp.map((c) => c.uid).sort()).toEqual([green.uid, both.uid].sort());
+      expect(r.state.players.P1.energy.find((c) => c.uid === "P1-HS")!.mode).toBe("active");
     });
 
     it("si on refuse, elle reste en mode Inertie", () => {

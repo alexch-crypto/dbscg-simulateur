@@ -24,8 +24,7 @@
             "do": "on_placed_in_energy",
             "optional": {
               "cost": [
-                { "do": "drop_to_warp", "count": 1, "filter": { "colors_any": ["green"] } },
-                { "do": "drop_to_warp", "count": 1, "filter": { "colors_any": ["yellow"] } }
+                { "do": "drop_to_warp", "filters": [{ "colors_any": ["green"] }, { "colors_any": ["yellow"] }] }
               ],
               "then": [{ "do": "negate_own_energy_exhaust" }]
             }

@@ -114,6 +114,8 @@ export type PendingDecision =
       looked?: { uid: string; cardId: string }[];
       /** « dont le total des coûts d'énergie est de X ou moins » (20-6). */
       maxTotalCost?: number;
+      /** « une carte verte et une carte jaune » : chaque carte choisie doit correspondre à une description différente. */
+      matchEach?: Record<string, unknown>[];
     }
   /**
    * 4-3 : fenêtre de contre. Le joueur peut déclarer une Capacité [Contre] de sa main, ou passer.

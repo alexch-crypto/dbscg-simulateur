@@ -1192,14 +1192,22 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
     }
 
     case "drop_to_warp": {
-      // « Choisissez une carte ... dans votre Dispersion et transférez-la dans votre Dimension parallèle. »
-      const options: string[] = [];
-      for (const card of p.drop) {
-        const ok = matchesFilter(card, step["filter"], ctx.cards, s);
-        if (ok === null) break;
-        if (ok) options.push(card.uid);
-      }
-      return askOrApply(s, ctx, step, r.player, options, targetCount(step, options.length), events);
+      // « Choisissez une carte verte et une carte jaune dans votre Dispersion et transférez-les dans
+      // votre Dimension parallèle » : toutes choisies en même temps, une par description (`filters`).
+      const filters = (step["filters"] ?? [step["filter"] ?? {}]) as Json[];
+      const options = p.drop.filter((c) => filters.some((f) => matchesFilter(c, f, ctx.cards, s) === true)).map((c) => c.uid);
+      const n = filters.length;
+      if (options.length < n) return false;
+      s.pending = {
+        type: "CHOOSE_CARDS",
+        player: r.player,
+        min: n,
+        max: n,
+        options,
+        prompt: n > 1 ? `Choisissez ${n} cartes de votre Dispersion à transférer dans votre Dimension parallèle (une de chaque : ${describeFilters(filters)})` : "Choisissez 1 carte de votre Dispersion à transférer dans votre Dimension parallèle",
+        ...(n > 1 ? { matchEach: filters } : {}),
+      };
+      return true;
     }
 
     case "negate_own_energy_exhaust": {
@@ -1391,6 +1399,27 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
   return false;
 }
 
+/** Peut-on associer chaque carte choisie à une description différente ? */
+function assignable(uids: string[], filters: Json[], s: GameState, ctx: GameContext): boolean {
+  const cards = uids.map((uid) => {
+    for (const pl of ["P1", "P2"] as const) {
+      const c = s.players[pl].drop.find((x) => x.uid === uid);
+      if (c) return c;
+    }
+    return null;
+  });
+  if (cards.some((c) => !c) || cards.length !== filters.length) return false;
+  const go = (i: number, used: Set<number>): boolean =>
+    i === cards.length || filters.some((f, j) => !used.has(j) && matchesFilter(cards[i]!, f, ctx.cards, s) === true && go(i + 1, new Set([...used, j])));
+  return go(0, new Set());
+}
+
+/** « verte, jaune » pour un message. */
+function describeFilters(filters: Json[]): string {
+  const names: Record<string, string> = { green: "verte", yellow: "jaune", red: "rouge", blue: "bleue", black: "noire", white: "blanche" };
+  return filters.map((f) => ((f["colors_any"] ?? []) as string[]).map((c) => names[c] ?? c).join("/") || "carte").join(", ");
+}
+
 /** Première Capacité [Activation : Principale] d'une carte (et sa position). */
 function mainAbilityOf(ctx: GameContext, cardId: string): { ability: Json; index: number } | null {
   const list = abilitiesOf(ctx.cards, ctx.cards.get(cardId));
@@ -1420,12 +1449,12 @@ function insertSteps(s: GameState, steps: EffectStep[]): void {
 /** Le joueur peut-il payer ce coût (« vous pouvez défausser une carte verte... ») ? */
 function canPay(s: GameState, ctx: GameContext, player: PlayerId, cost: EffectStep[]): boolean {
   // « une carte verte et une carte jaune dans votre Dispersion » : des cartes DIFFÉRENTES.
-  const fromDrop = cost.filter((c) => c.do === "drop_to_warp");
+  const fromDrop = cost.filter((c) => c.do === "drop_to_warp").flatMap((c) => (c["filters"] ?? [c["filter"] ?? {}]) as Json[]);
   if (fromDrop.length > 0) {
     const drop = s.players[player].drop;
     const assign = (i: number, used: Set<string>): boolean => {
       if (i === fromDrop.length) return true;
-      return drop.some((c) => !used.has(c.uid) && matchesFilter(c, fromDrop[i]!["filter"], ctx.cards, s) === true && assign(i + 1, new Set([...used, c.uid])));
+      return drop.some((c) => !used.has(c.uid) && matchesFilter(c, fromDrop[i], ctx.cards, s) === true && assign(i + 1, new Set([...used, c.uid])));
     };
     if (!assign(0, new Set())) return false;
   }
@@ -1465,6 +1494,9 @@ export function answerChoice(
     return `5-2 : choisissez entre ${pending.min} et ${pending.max} carte(s)`;
   }
   if (!chosen.every((uid) => pending.options.includes(uid))) return "5-2 : cette carte ne peut pas être choisie";
+  if (pending.matchEach && !assignable(chosen, pending.matchEach, s, ctx)) {
+    return "choisissez une de chaque sorte demandée (ex. une verte ET une jaune), toutes différentes";
+  }
   if (pending.maxTotalCost !== undefined) {
     const total = chosen.reduce((sum, uid) => sum + energyCostOf(ctx.cards.get(cardIdOf(s, uid) ?? "")), 0);
     if (total > pending.maxTotalCost) {
