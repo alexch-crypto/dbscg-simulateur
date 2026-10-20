@@ -7,7 +7,8 @@ import type { Action, GameContext, GameEvent } from "../protocol";
 import { opponentOf, type GameState, type PlayerId } from "../state/types";
 import { drawCards } from "./basic";
 import { checkDefeat } from "./defeat";
-import { cardHasKeyword, KW } from "./keywords";
+import { cardHasKeyword, KW, readyBlockedByEffect } from "./keywords";
+import { forgetCard } from "./zones";
 import { warpAtEndOfTurn } from "./alt-play";
 import { negatesOwnKeyword } from "./permanents";
 
@@ -26,6 +27,7 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   s.restrictions = s.restrictions.filter((r) => r.untilTurn >= turnNumber);
   s.delayed = s.delayed.filter((d) => d.untilTurn >= turnNumber);
   s.drawReplacements = s.drawReplacements.filter((d) => d.untilTurn >= turnNumber);
+  s.nextDiscounts = s.nextDiscounts.filter((d) => d.untilTurn >= turnNumber);
   events.push({ type: "TURN_STARTED", player, turnNumber });
 
   // 7-2-2 à 7-2-5 : effets « pour tout le tour », fin des effets « jusqu'au début du tour
@@ -92,8 +94,40 @@ function startMainPhase(s: GameState, events: GameEvent[]): void {
   s.pending = { type: "MAIN", player: s.turnPlayer };
 }
 
+/** Applique les effets « à la fin du tour » de ce tour (la carte doit toujours être en jeu). */
+function endOfTurnEffects(s: GameState, ctx: GameContext, events: GameEvent[]): void {
+  const due = s.endOfTurn.filter((e) => e.turn === s.turnNumber);
+  s.endOfTurn = s.endOfTurn.filter((e) => e.turn !== s.turnNumber);
+  for (const e of due) {
+    for (const pl of ["P1", "P2"] as const) {
+      const zone = s.players[pl].battle;
+      const card = zone.find((c) => c.uid === e.uid);
+      if (!card) continue;
+      if (e.action === "set_active") {
+        if (card.mode === "rest" && !readyBlockedByEffect(s, card.uid)) {
+          card.mode = "active";
+          events.push({ type: "CARDS_MODE_CHANGED", uids: [card.uid], mode: "active" });
+        }
+        continue;
+      }
+      zone.splice(zone.indexOf(card), 1);
+      forgetCard(s, card.uid);
+      card.mode = "active";
+      if (e.action === "return_to_hand") {
+        card.faceUp = false;
+        s.players[card.owner].hand.push(card);
+        events.push({ type: "EFFECT_NOTE", player: e.player, cardId: card.cardId, text: "retourne dans la main à la fin du tour" });
+      } else {
+        card.faceUp = true;
+        s.players[card.owner].removed.push(card);
+        events.push({ type: "CARD_REMOVED", player: pl, uid: card.uid, cardId: card.cardId });
+      }
+    }
+  }
+}
+
 /** 7-3-4-5 : le joueur actif termine sa phase principale. */
-export function endMainPhase(s: GameState, events: GameEvent[]): void {
+export function endMainPhase(s: GameState, events: GameEvent[], ctx: GameContext): void {
   // 7-3-5 : étape de Fin de la phase principale (effets « à la fin de la phase principale »,
   // point de contrôle, fin des effets « pour toute la phase principale »).
   // 7-4 : phase de Fin.
@@ -102,7 +136,9 @@ export function endMainPhase(s: GameState, events: GameEvent[]): void {
   events.push({ type: "PHASE_STARTED", player: s.turnPlayer, phase: "end" });
   // 7-4-2 à 7-4-6 : effets « à la fin du tour », points de contrôle, fin des effets du tour.
   // 7-4-7 : le tour se termine, l'adversaire devient le joueur actif.
-  // 7-4-2 : effets « à la fin du tour » — 22-15-6 [Espace-temps].
+  // 7-4-2 : effets « à la fin du tour » — 22-15-6 [Espace-temps], « passez-la en mode Action »,
+  // « retournez cette carte dans votre main », « retirez cette carte de la partie ».
+  endOfTurnEffects(s, ctx, events);
   warpAtEndOfTurn(s, events);
   events.push({ type: "TURN_ENDED", player: s.turnPlayer });
   startTurn(s, opponentOf(s.turnPlayer), s.turnNumber + 1, events);

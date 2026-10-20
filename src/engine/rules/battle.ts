@@ -9,7 +9,7 @@ import { opponentOf, type CardInstance, type CardRef, type EffectStep, type Game
 import { checkDefeat } from "./defeat";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
 import { checkpoint, enqueueSteps, queueTriggers } from "./autos";
-import { startResolution } from "./effects";
+import { resumeResolution, startResolution } from "./effects";
 import { openCounterWindow } from "./counters";
 import { hasKeyword, KW, readyAfterBattleCount, readyBlockedByEffect, removeIfUltimate, strikeDamage } from "./keywords";
 import { comboCostChange } from "./permanents";
@@ -60,7 +60,13 @@ export function powerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
   const set = s.effects.filter((e) => e.uid === ref.uid && e.kind === "set_power");
   const last = set[set.length - 1];
   if (last && last.kind === "set_power") base = last.value;
-  return base + s.powerMods.filter((m) => m.uid === ref.uid).reduce((total, m) => total + m.amount, 0);
+  // [Permanent] « Cette carte gagne +X de puissance » (ex. Piccolo, [Lien 3]).
+  if (found.kind !== "leader") {
+    for (const e of activePermanentEffects(s, ref.player, found.card, ctx)) {
+      if (e["do"] === "power_mod_static" && e["target"] === "this") base += e["amount"] as number;
+    }
+  }
+  return base + s.powerMods.filter((m) => m.uid === ref.uid && !m.combo).reduce((total, m) => total + m.amount, 0);
 }
 
 /** Déplace une carte vers la Zone de Dispersion de son propriétaire. */
@@ -91,7 +97,7 @@ export function possibleAttackers(s: GameState, player: PlayerId, ctx: GameConte
   const battleBlocked = limits.some((l) => l.remaining <= 0);
   return [
     ...(p.leader.mode === "active" && !leaderBlocked ? [p.leader.uid] : []),
-    ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active" && isBattleCard(c, ctx)).map((c) => c.uid)),
+    ...(battleBlocked ? [] : p.battle.filter((c) => c.mode === "active" && isBattleCard(c, ctx) && !cannotAttack(s, player, c, ctx)).map((c) => c.uid)),
     ...(leaderBlocked ? [] : p.unison.filter((c) => c.mode === "active" && !cannotAttack(s, player, c, ctx)).map((c) => c.uid)),
   ].filter((uid) => attackTaxPayable(s, player, uid, ctx));
 }
@@ -114,7 +120,7 @@ function activeCards(s: GameState, player: PlayerId, except: string, ctx: GameCo
 function attackTaxPayable(s: GameState, player: PlayerId, attacker: string, ctx: GameContext): boolean {
   const taxes = attackTaxes(s, player);
   if (taxes.length === 0) return true;
-  const discards = taxes.filter((t) => t.rule === "discard_2_per_attack").length * 2;
+  const discards = taxes.filter((t) => t.rule === "discard_2_per_attack").length * 2 + taxes.filter((t) => t.rule === "hand_to_z_energy_per_attack").length;
   const rests = taxes.filter((t) => t.rule === "rest_one_active_card_per_attack").length;
   return s.players[player].hand.length >= discards && activeCards(s, player, attacker, ctx).length >= rests;
 }
@@ -198,7 +204,9 @@ export function declareAttack(
     const steps: EffectStep[] = taxes.map((t) =>
       t.rule === "discard_2_per_attack"
         ? { do: "discard", count: 2 }
-        : { do: "set_rest", target: { owner: "self", zone: ["leader", "battle", "unison", "energy"], count: 1 }, exclude: [action.attacker] },
+        : t.rule === "hand_to_z_energy_per_attack"
+          ? { do: "hand_to_z_energy", count: 1 }
+          : { do: "set_rest", target: { owner: "self", zone: ["leader", "battle", "unison", "energy"], count: 1 }, exclude: [action.attacker] },
     );
     const source =
       attacker.kind === "leader"
@@ -400,7 +408,9 @@ export function endStep(s: GameState, ctx: GameContext, events: GameEvent[]): vo
 
 /** Somme des puissances de Combo de la Zone de Combo d'un joueur. */
 function comboPower(s: GameState, player: PlayerId, ctx: GameContext): number {
-  return s.players[player].combo.reduce((total, c) => total + (ctx.cards.get(c.cardId)?.combo?.power ?? 0), 0);
+  // Puissance de Combo imprimée, plus les « +X de puissance de Combo » en cours.
+  const bonus = (uid: string) => s.powerMods.filter((m) => m.uid === uid && m.combo).reduce((t, m) => t + m.amount, 0);
+  return s.players[player].combo.reduce((total, c) => total + (ctx.cards.get(c.cardId)?.combo?.power ?? 0) + bonus(c.uid), 0);
 }
 
 /** 8-4 : étape des Dégâts. */
@@ -503,6 +513,11 @@ export function takeLife(
   s.pending = null;
   // 21-2 : défaite immédiate si la Zone de Vie est vide.
   if (checkDefeat(s, events)) return null;
+  // Dégât infligé par une Capacité (et non par une attaque) : l'effet reprend.
+  if (pending.fromEffect) {
+    resumeResolution(s, ctx, events);
+    return null;
+  }
   battleEndStep(s, ctx, events);
   return null;
 }

@@ -10,6 +10,7 @@ import { declareCounter, passCounter } from "./rules/counters";
 import { activateAbility } from "./rules/activate";
 import { activateOverRealm, activateSuccessor } from "./rules/alt-play";
 import { playFromZDeck, zAwaken } from "./rules/zdeck";
+import { activateUnion } from "./rules/union";
 import { answerChoice, answerOption, answerPositions } from "./rules/effects";
 import { checkDefeat } from "./rules/defeat";
 import { playBattleCard } from "./rules/play";
@@ -28,7 +29,7 @@ const ANSWERS: Record<PendingDecision["type"], readonly Action["type"][]> = {
   CHARGE: ["CHARGE_ENERGY"],
   // 1-5-4-1 : [Activation : Principale/Combat] (dont [Éveil]) pendant la phase principale et
   // l'étape d'Attaque du joueur actif, et pendant l'étape de Défense du joueur non actif.
-  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "SUCCESSOR", "OVER_REALM", "PLAY_Z", "Z_AWAKEN", "END_MAIN_PHASE"],
+  MAIN: ["PLAY_CARD", "ATTACK", "AWAKEN", "ACTIVATE", "SUCCESSOR", "OVER_REALM", "UNION_FUSION", "PLAY_Z", "Z_AWAKEN", "END_MAIN_PHASE"],
   BLOCKER: ["DECLARE_BLOCKER"],
   OFFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "Z_AWAKEN", "END_STEP"],
   DEFENSE: ["COMBO", "AWAKEN", "ACTIVATE", "END_STEP"],
@@ -89,7 +90,7 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       error = playBattleCard(next, action, ctx, events);
       break;
     case "END_MAIN_PHASE":
-      endMainPhase(next, events);
+      endMainPhase(next, events, ctx);
       break;
     case "ATTACK":
       // 7-3-4-4 : attaquer pendant le timing libre de la phase principale.
@@ -137,6 +138,9 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
       break;
     case "OVER_REALM":
       error = activateOverRealm(next, action, ctx, events);
+      break;
+    case "UNION_FUSION":
+      error = activateUnion(next, action, ctx, events);
       break;
     case "PASS_COUNTER":
       passCounter(next, ctx, events);

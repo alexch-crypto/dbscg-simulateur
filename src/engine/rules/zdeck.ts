@@ -17,11 +17,11 @@ import type { CardDefinition } from "../cards/types";
 import type { Action, GameContext, GameEvent, PaymentChoice } from "../protocol";
 import type { CardInstance, GameState, PlayerId } from "../state/types";
 import { checkpoint, queueTriggers } from "./autos";
-import { checkConditions } from "./conditions";
+import { abilityConditions, checkConditions, matchesFilter } from "./conditions";
 import { openCounterWindow } from "./counters";
 import { applyCostModifiers, availableEnergySources, findPayment, paymentForCost, paymentSize, type EnergyPayment } from "./energy";
 import { removeIfUltimate } from "./keywords";
-import { zoneCostModifiers } from "./permanents";
+import { activePermanentEffects, zoneCostModifiers } from "./permanents";
 import { payEnergy } from "./play";
 import { forgetCard, leaveUnison } from "./zones";
 
@@ -36,14 +36,45 @@ export interface ZPlayOption {
   cardId: string;
   kind: ZKind;
   zCost: number;
-  /** Paiements possibles : un seul, ou un par valeur de X (Unissons). */
-  payments: { x?: number; payment: EnergyPayment }[];
+  /**
+   * Paiements possibles : un seul, ou un par valeur de X (Unissons). `alt` : coût alternatif
+   * (« au lieu de payer son coût d'énergie et son coût d'énergie Z, vous pouvez... »).
+   */
+  payments: { x?: number; payment: EnergyPayment; alt?: { zCost: number; sacrifice: string[] } }[];
+}
+
+/** « La prochaine fois que vous placez une Extra Z, réduisez de (...) son coût d'énergie » (Trunks). */
+function extraZDiscount(s: GameState, player: PlayerId) {
+  return s.nextDiscounts.find((d) => d.player === player && d.on === "extra_z" && d.untilTurn >= s.turnNumber) ?? null;
 }
 
 /** Paiement d'énergie d'une carte du deck Z, ses propres réductions comprises (ex. Son Gohan BT28-081). */
 function zPayment(s: GameState, player: PlayerId, card: CardInstance, def: CardDefinition, ctx: GameContext, x = 0): EnergyPayment | null {
   if (!def.cost) return { colors: {}, generic: 0 };
-  return paymentForCost(applyCostModifiers(def.cost, zoneCostModifiers(s, player, card, "z_deck", ctx), x), x);
+  const mods = zoneCostModifiers(s, player, card, "z_deck", ctx);
+  const discount = def.type === "z_extra" ? extraZDiscount(s, player) : null;
+  if (discount) mods.push({ kind: "colors", colors: Object.fromEntries(Object.entries(discount.colors).map(([c, n]) => [c, -(n ?? 0)])) });
+  return paymentForCost(applyCostModifiers(def.cost, mods, x), x);
+}
+
+/** Coût alternatif d'une carte Z (Broly SS3, le Tyran), s'il est possible maintenant. */
+function zAltCost(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext) {
+  for (const e of activePermanentEffects(s, player, card, ctx)) {
+    if (e["do"] !== "z_play_alt_cost") continue;
+    let payment: EnergyPayment = { colors: {}, generic: 0 };
+    let zCost = 0;
+    let filter: unknown = undefined;
+    for (const step of (e["replace_with"] ?? []) as Json[]) {
+      if (step["do"] === "pay_energy") payment = { colors: (step["specified"] ?? {}) as EnergyPayment["colors"], generic: (step["generic"] as number) ?? 0 };
+      else if (step["do"] === "z_energy_to_drop") zCost = (step["count"] as number) ?? 1;
+      else if (step["do"] === "move_to_drop") filter = ((step["target"] ?? {}) as Json)["filter"];
+    }
+    const sacrifice = s.players[player].battle
+      .filter((b) => ["battle", "z_battle"].includes(ctx.cards.get(b.cardId)?.type ?? "") && matchesFilter(b, filter, ctx.cards, s) === true)
+      .map((b) => b.uid);
+    if (sacrifice.length > 0 && zCostPayable(s, player, zCost)) return { payment, zCost, sacrifice };
+  }
+  return null;
 }
 
 /** 5-4-3 : peut-on payer le coût d'Énergie Z ? */
@@ -59,8 +90,13 @@ export function zPlayOptions(s: GameState, player: PlayerId, ctx: GameContext): 
     const kind = def ? Z_KINDS[def.type] : undefined;
     if (!def || !kind) continue;
     const zCost = def.zCost ?? 0;
-    if (!zCostPayable(s, player, zCost)) continue;
     const payments: ZPlayOption["payments"] = [];
+    const alt = zAltCost(s, player, card, ctx);
+    if (alt && findPayment(sources, alt.payment)) payments.push({ payment: alt.payment, alt: { zCost: alt.zCost, sacrifice: alt.sacrifice } });
+    if (!zCostPayable(s, player, zCost)) {
+      if (payments.length > 0) result.push({ uid: card.uid, cardId: card.cardId, kind, zCost, payments });
+      continue;
+    }
     if (def.cost?.total === "X") {
       // 1-2-2-2 : coût X choisi par le joueur (au moins le coût de couleur, 1-2-2-1).
       const colorSum = Object.values(def.cost.specified).reduce((a, b) => a + (b ?? 0), 0);
@@ -106,16 +142,33 @@ function payZEnergy(s: GameState, player: PlayerId, uids: string[], zCost: numbe
 export function playFromZDeck(s: GameState, action: Extract<Action, { type: "PLAY_Z" }>, ctx: GameContext, events: GameEvent[]): string | null {
   const option = zPlayOptions(s, action.player, ctx).find((o) => o.uid === action.uid);
   if (!option) return "14 : cette carte Z ne peut pas être jouée maintenant (phase, coût d'énergie ou d'Énergie Z)";
-  const choice = option.payments.find((p) => p.x === action.x);
-  if (!choice) return "1-2-2-2 : choisissez une valeur de X que vous pouvez payer";
+  const choice = option.payments.find((p) => p.x === action.x && !!p.alt === (action.sacrifice !== undefined));
+  if (!choice) return action.sacrifice !== undefined ? "le coût alternatif de cette carte n'est pas possible" : "1-2-2-2 : choisissez une valeur de X que vous pouvez payer";
+  if (choice.alt && !choice.alt.sacrifice.includes(action.sacrifice!)) return "cette carte ne peut pas être placée dans la Dispersion pour ce coût";
   const error = payEnergy(s, action.player, choice.payment, action.payment, ctx);
   if (error) return error;
-  const zError = payZEnergy(s, action.player, action.zEnergy, option.zCost, events);
+  const zError = payZEnergy(s, action.player, action.zEnergy, choice.alt ? choice.alt.zCost : option.zCost, events);
   if (zError) return zError;
   const p = s.players[action.player];
+  if (choice.alt) {
+    // Coût alternatif : la carte choisie de la Zone de Combat va dans la Dispersion.
+    const sacrificed = p.battle.find((b) => b.uid === action.sacrifice)!;
+    p.battle.splice(p.battle.indexOf(sacrificed), 1);
+    forgetCard(s, sacrificed.uid);
+    sacrificed.mode = "active";
+    sacrificed.faceUp = true;
+    s.players[sacrificed.owner].drop.push(sacrificed);
+    events.push({ type: "CARD_TO_DROP", player: action.player, uid: sacrificed.uid, cardId: sacrificed.cardId, from: "battle" });
+    queueTriggers(s, { event: "leaves_battle", card: sacrificed, toDrop: true }, ctx, events);
+  }
+  // La réduction « prochaine Extra Z » est consommée.
+  if (option.kind === "extra") {
+    const d = extraZDiscount(s, action.player);
+    if (d) s.nextDiscounts.splice(s.nextDiscounts.indexOf(d), 1);
+  }
   const card = p.zDeck.find((c) => c.uid === option.uid)!;
   card.faceUp = true; // révélée
-  events.push({ type: "Z_PLAY_DECLARED", player: action.player, uid: card.uid, cardId: card.cardId, zEnergy: option.zCost });
+  events.push({ type: "Z_PLAY_DECLARED", player: action.player, uid: card.uid, cardId: card.cardId, zEnergy: choice.alt ? choice.alt.zCost : option.zCost });
   s.pending = null;
   // 18-2-1-3 : l'Unisson entre en jeu avec autant de marqueurs que d'Énergies passées en mode Inertie.
   const markers = option.kind === "unison" ? paymentSize(choice.payment) : 0;
@@ -153,6 +206,8 @@ export function finishZPlay(s: GameState, ctx: GameContext, player: PlayerId, ui
       }
       p.battle.push(card);
       events.push({ type: "EXTRA_Z_PLACED", player, uid: card.uid, cardId: card.cardId });
+      // « Quand cette carte est placée dans une Zone de Combat ».
+      queueTriggers(s, { event: "played", card }, ctx, events);
     } else {
       // 3-11-4 / 18-2-1-3 : une seule Unisson ; l'ancienne quitte la Zone Unisson.
       for (const other of [...p.unison]) leaveUnison(s, ctx, player, other, events);
@@ -189,7 +244,7 @@ export function zAwakenOptions(s: GameState, player: PlayerId, ctx: GameContext)
     if (def?.type !== "z_leader") continue;
     const ability = abilitiesOf(ctx.cards, def).find((a) => a["kind"] === "z_awaken");
     if (!ability) continue;
-    if (checkConditions(s, player, ability["condition"], ctx.cards, card.uid) !== true) continue;
+    if (checkConditions(s, player, abilityConditions(ability), ctx.cards, card.uid) !== true) continue;
     let payment: EnergyPayment = { colors: {}, generic: 0 };
     let supported = true;
     for (const c of (ability["cost"] ?? []) as Json[]) {

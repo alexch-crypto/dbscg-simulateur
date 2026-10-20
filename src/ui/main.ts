@@ -15,6 +15,7 @@
 // n'affiche que des vues de joueur (getPlayerView). Aucune règle du jeu n'est codée ici.
 
 import freezerFile from "../../cards/freezer.json";
+import gogetaFile from "../../cards/gogeta.json";
 import {
   applyAction,
   buildCardDatabase,
@@ -53,13 +54,17 @@ import "./style.css";
 // ---------------------------------------------------------------------------
 
 const freezer = parseCardFile(freezerFile);
-const db = buildCardDatabase([freezer.cards]);
+const gogeta = parseCardFile(gogetaFile);
+const db = buildCardDatabase([freezer.cards, gogeta.cards]);
 const ctx: GameContext = { cards: db };
 
 /** Préférences du joueur (pseudo, thème...) et ses decks, mémorisés dans le navigateur. */
 const prefs = loadPrefs();
 applyTheme(prefs.theme);
-const decks = new DeckStore([{ id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true }]);
+const decks = new DeckStore([
+  { id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true },
+  { id: "gogeta-base", name: "Gogeta GT (deck de base)", list: gogeta.deck!, builtIn: true },
+]);
 /** Decks et réglages de la dernière partie locale (pour « Rejouer »). */
 let lastLocal: { decks: Record<PlayerId, SavedDeck>; prompts: Record<PlayerId, CounterPrompt> } | null = null;
 
@@ -508,6 +513,7 @@ function anchorOf(a: Action): string | null {
     case "ACTIVATE":
     case "SUCCESSOR":
     case "OVER_REALM":
+    case "UNION_FUSION":
     case "DECLARE_COUNTER":
     case "PLAY_Z":
     case "Z_AWAKEN":

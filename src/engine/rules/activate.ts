@@ -11,9 +11,9 @@
 import { abilitiesOf, type RawAbility } from "../cards/abilities";
 import type { Action, GameContext, GameEvent, PaymentChoice } from "../protocol";
 import type { CardInstance, EffectStep, GameState, PlayerId } from "../state/types";
-import { checkConditions, matchesFilter } from "./conditions";
+import { abilityConditions, checkConditions, matchesFilter } from "./conditions";
 import { startResolution } from "./effects";
-import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
+import { availableEnergySources, findPayment, paymentForCost, type EnergyPayment } from "./energy";
 import { isNegated } from "./keywords";
 import { leaderAbilities, leaderCardId } from "./leader";
 import { payEnergy } from "./play";
@@ -33,6 +33,8 @@ export interface Activatable {
   otherCosts: EffectStep[];
   /** « Déclarez un nombre » (20-5) : valeurs possibles de X. */
   declare?: { min: number; max: number };
+  /** 12-2 : Extra activée depuis la main (elle va dans la Dispersion, son coût d'énergie est payé). */
+  extraFromHand?: boolean;
 }
 
 /** Timings d'[Activation] autorisés dans la décision en cours (1-5-4-1). */
@@ -44,10 +46,11 @@ function allowedTimings(s: GameState, player: PlayerId): string[] {
   return [];
 }
 
-/** Zone depuis laquelle une Capacité s'active. */
-function activationZone(ability: RawAbility): "board" | "hand" | "drop" | "combo" {
+/** Zone depuis laquelle une Capacité s'active (12-2 : une Extra s'active depuis la main). */
+function activationZone(ability: RawAbility, type?: string): "board" | "hand" | "drop" | "combo" {
   const from = ability["activates_from"];
   if (from === "drop" || from === "combo" || from === "hand") return from;
+  if (type === "extra") return "hand";
   const effect = (ability["effect"] ?? []) as Json[];
   if (effect.some((e) => e["do"] === "play_self" && e["from"] === "hand")) return "hand";
   return "board";
@@ -77,6 +80,13 @@ export function parseCost(
     } else if (c["do"] === "remove_from_game" && c["target"] === "this") {
       // « Retirez cette carte de la partie » (ex. Extra Z).
       others.push(c as EffectStep);
+    } else if (c["do"] === "move_to_drop" && typeof c["target"] === "object") {
+      // « Placez une de vos cartes ... de votre Zone de Combat dans votre Dispersion ».
+      others.push(c as EffectStep);
+    } else if (c["do"] === "z_energy_to_drop" && typeof c["count"] === "number") {
+      others.push(c as EffectStep);
+    } else if (c["do"] === "hand_to_z_energy" && typeof c["count"] === "number") {
+      others.push(c as EffectStep);
     } else if (c["do"] === "self_restriction") {
       // « Vous ne pouvez pas ... pour toute la durée du tour » : toujours payable.
       others.push(c as EffectStep);
@@ -90,6 +100,14 @@ export function parseCost(
   return { energy, others, ...(declare ? { declare } : {}) };
 }
 
+/** Somme de deux paiements d'énergie (ex. coût d'une Extra + coût de sa Capacité). */
+function addPayments(a: EnergyPayment, b: EnergyPayment | null): EnergyPayment {
+  if (!b) return a;
+  const colors = { ...a.colors };
+  for (const [c, n] of Object.entries(b.colors)) colors[c as keyof typeof colors] = (colors[c as keyof typeof colors] ?? 0) + (n ?? 0);
+  return { colors, generic: a.generic + b.generic };
+}
+
 /** Les autres coûts (Vie, défausse) peuvent-ils être payés ? */
 export function otherCostsPayable(s: GameState, player: PlayerId, others: EffectStep[], self: string, ctx: GameContext): boolean {
   const p = s.players[player];
@@ -97,9 +115,15 @@ export function otherCostsPayable(s: GameState, player: PlayerId, others: Effect
     const n = c["count"] as number;
     if (c.do === "life_to_hand" && p.life.length < n) return false;
     if (c.do === "spirit_boost" && (p.unison[0]?.markers ?? 0) < (c["markers"] as number)) return false;
-    if (c.do === "discard") {
+    if (c.do === "discard" || c.do === "hand_to_z_energy") {
       const ok = p.hand.filter((card) => card.uid !== self && matchesFilter(card, c["filter"], ctx.cards) === true);
       if (ok.length < n) return false;
+    }
+    if (c.do === "z_energy_to_drop" && p.zEnergy.length < n) return false;
+    if (c.do === "move_to_drop") {
+      const target = c["target"] as Json;
+      const ok = p.battle.filter((card) => matchesFilter(card, target["filter"], ctx.cards, s) === true);
+      if (ok.length < ((target["count"] as number) ?? 1)) return false;
     }
   }
   return true;
@@ -133,6 +157,7 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
 
   const sourcesOfEnergy = availableEnergySources(s, player, ctx.cards);
   const result: Activatable[] = [];
+  const handIds = new Set(p.hand.map((c) => c.uid));
   // « Vous ne pouvez pas activer les Capacités d'exemplaires de cette carte » (pendant ce tour).
   const forbidden = new Set(
     s.restrictions
@@ -144,7 +169,9 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
     abilities.forEach((ability, index) => {
       if (ability["kind"] !== "activate") return;
       if (!timings.includes(ability["timing"] as string)) return;
-      if (activationZone(ability) !== zone) return;
+      const type = ctx.cards.get(card.cardId)?.type;
+      if (activationZone(ability, zone === "hand" ? type : undefined) !== zone) return;
+      const extraFromHand = type === "extra" && handIds.has(card.uid);
       // Limites : [Une fois par tour] (22-11), [Limite X] (22-44).
       const limits = (ability["limits"] ?? {}) as Json;
       const keys = usageKeys(player, card.uid, card.cardId, index);
@@ -153,26 +180,37 @@ export function activatableAbilities(s: GameState, player: PlayerId, ctx: GameCo
       // 13-4 : coût de marqueurs [+X] / [-X] — seulement dans la Zone Unisson, une fois par tour et
       // par carte pour toutes ses Capacités de marqueur, et pas plus de marqueurs qu'elle n'en a.
       const markerCost = markerCostOf(ability);
-      if (markerCost !== undefined) {
+      let markerDeclare: { min: number; max: number } | undefined;
+      if (markerCost !== undefined || ability["marker_cost"] === "-X") {
         const unison = p.unison.find((u) => u.uid === card.uid);
         if (!unison || s.turnUsage[`markers:${card.uid}`]) return;
-        if (markerCost < 0 && (unison.markers ?? 0) < -markerCost) return;
+        if (markerCost !== undefined && markerCost < 0 && (unison.markers ?? 0) < -markerCost) return;
+        // [-X] : retirer X marqueurs, X au choix (au moins 1, au plus le nombre de marqueurs).
+        if (ability["marker_cost"] === "-X") {
+          if ((unison.markers ?? 0) < 1) return;
+          markerDeclare = { min: 1, max: unison.markers ?? 0 };
+        }
       }
       // Conditions (non gérées => non proposée).
-      if (checkConditions(s, player, ability["condition"], ctx.cards, card.uid) !== true) return;
+      if (checkConditions(s, player, abilityConditions(ability), ctx.cards, card.uid) !== true) return;
       // Coût : géré et payable (9-2-3).
       const cost = parseCost(ability["cost"]);
       if (!cost) return;
-      if (cost.energy && !findPayment(sourcesOfEnergy, cost.energy)) return;
+      // 12-2-2-2 : une Extra activée depuis la main paie son coût d'énergie, en plus du coût de Capacité.
+      const def = ctx.cards.get(card.cardId);
+      const energy = extraFromHand && def?.cost ? addPayments(paymentForCost(def.cost), cost.energy) : cost.energy;
+      if (energy && !findPayment(sourcesOfEnergy, energy)) return;
       if (!otherCostsPayable(s, player, cost.others, card.uid, ctx)) return;
+      const declare = cost.declare ?? markerDeclare;
       result.push({
         uid: card.uid,
         cardId: card.cardId,
         index,
         ability,
-        energy: cost.energy,
+        energy,
         otherCosts: cost.others,
-        ...(cost.declare ? { declare: cost.declare } : {}),
+        ...(declare ? { declare } : {}),
+        ...(extraFromHand ? { extraFromHand: true } : {}),
       });
     });
   }
@@ -213,9 +251,15 @@ export function activateAbility(
   } else if (action.payment.energy.length > 0 || action.payment.markers > 0) {
     return "cette Capacité n'a pas de coût d'énergie";
   }
-  // 9-4-2 : la carte est révélée si elle est en main.
-  const inHand = s.players[action.player].hand.find((c) => c.uid === a.uid);
+  // 9-4-2 : la carte est révélée si elle est en main. 12-2-2-2 : une Extra va dans la Dispersion.
+  const hand = s.players[action.player].hand;
+  const inHand = hand.find((c) => c.uid === a.uid);
   if (inHand) inHand.faceUp = true;
+  if (inHand && a.extraFromHand) {
+    hand.splice(hand.indexOf(inHand), 1);
+    inHand.mode = "active";
+    s.players[inHand.owner].drop.push(inHand);
+  }
   events.push({
     type: "ABILITY_ACTIVATED",
     player: action.player,
@@ -226,7 +270,11 @@ export function activateAbility(
   });
   // 13-4-1 : coût de marqueurs (ajout immédiat, ou retrait ; à 0 l'Unisson quitte la zone, 21-9).
   const markerCost = markerCostOf(a.ability);
-  if (markerCost !== undefined) {
+  if (a.ability["marker_cost"] === "-X") {
+    s.turnUsage[`markers:${a.uid}`] = 1;
+    const unison = s.players[action.player].unison.find((u) => u.uid === a.uid)!;
+    removeMarkers(s, ctx, action.player, unison, action.x ?? 0, events);
+  } else if (markerCost !== undefined) {
     s.turnUsage[`markers:${a.uid}`] = 1;
     const unison = s.players[action.player].unison.find((u) => u.uid === a.uid)!;
     if (markerCost > 0) {
@@ -244,7 +292,7 @@ export function activateAbility(
   const effect = (a.ability["effect"] ?? []) as EffectStep[];
   // 22-10-3-1 : une Capacité dont l'effet joue une carte ouvre une fenêtre de [Contre : Mise en
   // jeu] pour l'adversaire, une fois les coûts payés et avant la résolution (9-4-4).
-  const playsACard = effect.some((e) => e.do === "play_self");
+  const playsACard = effect.some((e) => e.do === "play_self" || e.do === "play_from");
   const steps = [...a.otherCosts, ...(playsACard ? [{ do: "counter_window_play" }] : []), ...effect];
   startResolution(s, ctx, action.player, { uid: a.uid, cardId: a.cardId }, steps, { kind: "restore", pending: resume }, events, action.x);
   return null;

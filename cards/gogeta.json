@@ -112,7 +112,7 @@
       "cost": { "total": 2, "specified": { "green": 2 } },
       "power": 10000,
       "combo": { "cost": 0, "power": 0 },
-      "character": ["Son Gohan (adulte)"],
+      "character": ["Son Gohan (jeune)"],
       "traits": ["Saiyan", "Terrien"],
       "era": "Le Sorcier maléfique Babidi",
       "keywords": ["super_combo"],
@@ -131,8 +131,7 @@
           ],
           "text": "Auto. — Si votre Leader est vert, que votre total de points de vie est de 4 ou moins et que toutes vos sources d'énergie sont vertes : Quand cette carte est utilisée pour une Combo, elle gagne +10000 de puissance de Combo pour toute la durée du combat ; vous pouvez choisir une carte de votre main et la placer au-dessous de votre deck. Si vous faites ainsi, piochez deux cartes."
         }
-      ],
-      "a_verifier": ["Personnage : « Son Gohan (adulte) » lu avec doute sur la photo."]
+      ]
     },
 
     {

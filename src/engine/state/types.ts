@@ -97,7 +97,7 @@ export type PendingDecision =
    * 21-3 : le joueur qui subit des dégâts choisit `amount` cartes de sa Zone de Vie, toutes
    * en même temps. Avec [Coup Critique] (`critical`), elles vont en Dispersion au lieu de la main.
    */
-  | { type: "TAKE_DAMAGE"; player: PlayerId; amount: number; critical: boolean }
+  | { type: "TAKE_DAMAGE"; player: PlayerId; amount: number; critical: boolean; fromEffect?: boolean }
   /** 8-5-2 / 8-5-3 : placer jusqu'à une carte de sa Zone de Combo dans sa Zone d'Énergie Z. */
   | { type: "COMBO_TO_Z"; player: PlayerId }
   /**
@@ -128,7 +128,7 @@ export type PendingDecision =
    * 3-9-2 : choisir des cartes de sa Zone de Vie pendant un effet (« rajoutez à votre main une
    * carte de vos points de vie »). On choisit des POSITIONS, à l'aveugle.
    */
-  | { type: "CHOOSE_LIFE"; player: PlayerId; min: number; max: number; prompt: string }
+  | { type: "CHOOSE_LIFE"; player: PlayerId; min: number; max: number; prompt: string; to?: "drop" }
   /** 9-6-3 : plusieurs [Auto.] du même joueur sont en attente : il choisit laquelle résoudre. */
   | { type: "CHOOSE_AUTO"; player: PlayerId; options: { id: number; label: string }[] };
 
@@ -149,7 +149,7 @@ export type Continuation =
   /** 8-4-9 : après l'étape des Dégâts, passer à l'étape de Fin de Combat. */
   | { kind: "battle_end_step" }
   /** 5-5-2-3 : après la fenêtre de contre d'une mise en jeu, jouer la carte. */
-  | { kind: "finish_play"; player: PlayerId; uid: string }
+  | { kind: "finish_play"; player: PlayerId; uid: string; markers?: number }
   /** 16-2-1-3 / 17-2-1-3 / 18-2-1-3 : après la fenêtre de contre, la carte Z arrive dans sa zone. */
   | { kind: "finish_z_play"; player: PlayerId; uid: string; markers: number }
   /** Reprendre l'effet en cours de résolution (après une fenêtre de contre ouverte au milieu). */
@@ -250,7 +250,7 @@ export type ContinuousEffect = { uid: string; untilTurn: number; battleOnly?: bo
  */
 export interface AttackTax {
   player: PlayerId;
-  rule: "discard_2_per_attack" | "rest_one_active_card_per_attack";
+  rule: "discard_2_per_attack" | "rest_one_active_card_per_attack" | "hand_to_z_energy_per_attack";
   untilTurn: number;
 }
 
@@ -305,6 +305,27 @@ export interface SuccessorDiscount {
   untilTurn: number;
 }
 
+/** « À la fin du tour, [action] cette carte. » */
+export interface EndOfTurnEffect {
+  player: PlayerId;
+  uid: string;
+  action: "set_active" | "return_to_hand" | "remove_from_game";
+  turn: number;
+}
+
+/**
+ * « Pendant le tour, la prochaine fois que vous activez la Capacité Union d'un <...> / que vous
+ * placez une Extra Z, réduisez de (...) son coût. »
+ */
+export interface NextDiscount {
+  player: PlayerId;
+  on: "union" | "extra_z";
+  filter: Record<string, unknown>;
+  colors: Partial<Record<string, number>>;
+  generic: number;
+  untilTurn: number;
+}
+
 /** Capacité [Auto.] d'une carte, en état de suspens (9-6-2). */
 export interface QueuedAuto {
   /** Numéro unique (pour que le joueur puisse choisir l'ordre). */
@@ -327,6 +348,8 @@ export interface PowerModifier {
   uid: string;
   amount: number;
   until: "turn" | "battle";
+  /** Puissance de Combo (et non puissance de la carte). */
+  combo?: boolean;
 }
 
 /** Désigne un Leader ou une carte de Combat en jeu. */
@@ -417,6 +440,12 @@ export interface GameState {
   drawReplacements: DrawReplacement[];
   /** Prochain numéro de jeton (19). */
   nextTokenId: number;
+  /** Zone d'où chaque carte en jeu a été jouée (« si cette carte a été jouée depuis une Dispersion »). */
+  playedFrom: Record<string, string>;
+  /** Effets « à la fin du tour » en attente (passer en mode Action, retourner en main, retirer). */
+  endOfTurn: EndOfTurnEffect[];
+  /** Réductions du prochain coût de Capacité [Union] / du prochain placement d'Extra Z. */
+  nextDiscounts: NextDiscount[];
   /** Réglages choisis par les joueurs au début de la partie. */
   settings: { counterPrompt: Record<PlayerId, CounterPrompt> };
   result: GameResult | null;

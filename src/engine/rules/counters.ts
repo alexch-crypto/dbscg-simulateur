@@ -28,12 +28,12 @@ import {
   type PlayerId,
 } from "../state/types";
 import { otherCostsPayable, parseCost } from "./activate";
-import { continueWith } from "./autos";
-import { checkConditions } from "./conditions";
+import { continueWith, queueTriggers } from "./autos";
+import { abilityConditions, checkConditions } from "./conditions";
 import { startResolution } from "./effects";
 import { availableEnergySources, findPayment, paymentForCost, type EnergyPayment } from "./energy";
 import { cardHasKeyword } from "./keywords";
-import { payEnergy } from "./play";
+import { normalPlayPayment, payEnergy } from "./play";
 
 type Json = Record<string, unknown>;
 
@@ -83,14 +83,18 @@ export function counterOptions(s: GameState, player: PlayerId, on: CounterOn, ct
     const abilities = abilitiesOf(ctx.cards, def);
     for (const ability of abilities) {
       if (ability["kind"] !== "counter" || !matches(ability, on, window.event, ctx)) continue;
+      // 22-44 [Limite X] : partagée entre tous les exemplaires du même numéro de carte.
+      const limit = ((ability["limits"] ?? {}) as Json)["limit"];
+      if (typeof limit === "number" && (s.turnUsage[counterLimitKey(player, card.cardId)] ?? 0) >= limit) continue;
       if (ability["counter_on"] === "play" && onlyPlayCounterOf.some((uid) => uid !== card.uid)) continue;
-      if (checkConditions(s, player, ability["condition"], ctx.cards) !== true) continue;
+      if (checkConditions(s, player, abilityConditions(ability), ctx.cards) !== true) continue;
       const cost = parseCost(ability["cost"]);
       if (!cost) continue;
       // Coût d'énergie : celui de l'Extra (12-2-2-2), ou celui de la carte de Combat si le
       // [Contre] la joue en payant son coût (« pays_energy_cost_of_card »).
       const payCard = def?.type === "extra" || ability["pays_energy_cost_of_card"] === true;
-      const cardCost = payCard && def?.cost ? paymentForCost(def.cost) : null;
+      // Une carte de Combat jouée par son [Contre] paie son coût actuel en main (réductions comprises).
+      const cardCost = payCard && def?.cost ? (def.type === "extra" ? paymentForCost(def.cost) : normalPlayPayment(s, player, card, ctx)) : null;
       const energy = cost.energy ?? cardCost;
       const base = { uid: card.uid, cardId: card.cardId, ability };
       if ((!energy || findPayment(sources, energy)) && otherCostsPayable(s, player, cost.others, card.uid, ctx)) {
@@ -99,7 +103,7 @@ export function counterOptions(s: GameState, player: PlayerId, on: CounterOn, ct
       // Coûts alternatifs donnés par les [Permanent] de la carte elle-même.
       for (const permanent of abilities) {
         if (permanent["kind"] !== "permanent") continue;
-        if (checkConditions(s, player, permanent["condition"], ctx.cards) !== true) continue;
+        if (checkConditions(s, player, abilityConditions(permanent), ctx.cards) !== true) continue;
         for (const e of (permanent["effect"] ?? []) as Json[]) {
           const alt =
             e["do"] === "counter_without_energy_cost"
@@ -118,6 +122,8 @@ export function counterOptions(s: GameState, player: PlayerId, on: CounterOn, ct
   }
   return result;
 }
+
+const counterLimitKey = (player: PlayerId, cardId: string) => `limit:${player}:${cardId}#counter`;
 
 /** Paiement suggéré pour un [Contre]. */
 export function suggestCounterPayment(s: GameState, player: PlayerId, option: CounterOption, ctx: GameContext): PaymentChoice {
@@ -212,6 +218,12 @@ export function declareCounter(
     card.faceUp = true;
   }
   const window = s.counterWindow!;
+  if (typeof ((option.ability["limits"] ?? {}) as Json)["limit"] === "number") {
+    const key = counterLimitKey(action.player, card.cardId);
+    s.turnUsage[key] = (s.turnUsage[key] ?? 0) + 1;
+  }
+  // « Quand votre adversaire active une Capacité Contre » (résolue au prochain point de contrôle).
+  queueTriggers(s, { event: "counter_activated", player: action.player }, ctx, events);
   // Les autres parties du coût (Vie, défausse...) sont payées tout de suite, comme une petite
   // résolution qui revient ensuite à la fenêtre de l'adversaire.
   const link = { player: action.player, uid: card.uid, cardId: card.cardId, ability: option.ability };

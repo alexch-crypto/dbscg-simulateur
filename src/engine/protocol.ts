@@ -18,7 +18,7 @@ export type Action =
   /** 7-2-11 : placer une carte de sa main (uid) dans sa Zone d'Énergie, ou rien (null). */
   | { type: "CHARGE_ENERGY"; player: PlayerId; uid: string | null }
   /** 7-3-4-1 / 5-5-2 : jouer une carte de Combat depuis sa main en payant son coût. */
-  | { type: "PLAY_CARD"; player: PlayerId; uid: string; payment: PaymentChoice }
+  | { type: "PLAY_CARD"; player: PlayerId; uid: string; payment: PaymentChoice; x?: number }
   /** 7-3-4-5 : terminer sa phase principale. */
   | { type: "END_MAIN_PHASE"; player: PlayerId }
   /** 8-1-1 : attaquer avec son Leader ou une carte de Combat (uids) une cible adverse. */
@@ -62,11 +62,22 @@ export type Action =
    * coût d'Énergie et son coût d'Énergie Z (`zEnergy` : cartes de la Zone d'Énergie Z placées dans
    * la Dispersion). `x` : coût X choisi pour une Unisson (= ses marqueurs).
    */
-  | { type: "PLAY_Z"; player: PlayerId; uid: string; payment: PaymentChoice; zEnergy: string[]; x?: number }
+  | {
+      type: "PLAY_Z";
+      player: PlayerId;
+      uid: string;
+      payment: PaymentChoice;
+      zEnergy: string[];
+      x?: number;
+      /** Coût alternatif de la carte (ex. Broly SS3) : carte de sa Zone de Combat placée dans la Dispersion. */
+      sacrifice?: string;
+    }
   /** [Éveil Z] d'un Leader Z de son deck Z. */
   | { type: "Z_AWAKEN"; player: PlayerId; uid: string; payment: PaymentChoice; zEnergy: string[] }
   /** 22-15 : activer l'[Espace-temps] d'une carte de sa main. */
   | { type: "OVER_REALM"; player: PlayerId; uid: string }
+  /** 22-13-4 : [Union-Fusion] — cartes de la main à placer dans la Dispersion (même puissance). */
+  | { type: "UNION_FUSION"; player: PlayerId; uid: string; materials: string[]; payment: PaymentChoice }
   /** 9-7 : ne rien déclarer pendant une fenêtre de contre. */
   | { type: "PASS_COUNTER"; player: PlayerId }
   /**
@@ -105,6 +116,7 @@ export type GameEvent =
     }
   /** 5-5-2-3 : la carte arrive dans la Zone de Combat. */
   | { type: "CARD_PLAYED"; player: PlayerId; uid: string; cardId: string }
+  | { type: "UNION_ACTIVATED"; player: PlayerId; uid: string; cardId: string; materials: string[] }
   | { type: "COUNTER_WINDOW_OPENED"; on: "play" | "attack"; player: PlayerId }
   | { type: "COUNTER_WINDOW_CLOSED" }
   /** Un [Contre] est déclaré : la carte est révélée. */
@@ -144,7 +156,7 @@ export type GameEvent =
   | { type: "AWAKEN_ACTIVATED"; player: PlayerId }
   | { type: "LEADER_FLIPPED"; player: PlayerId; side: "front" | "back" }
   /** Carte jouée via une Capacité (5-5-3), sans payer son coût. */
-  | { type: "CARD_PLAYED_BY_SKILL"; player: PlayerId; uid: string; cardId: string; from: "hand" | "drop"; mode: "active" | "rest"; into?: PlayerId }
+  | { type: "CARD_PLAYED_BY_SKILL"; player: PlayerId; uid: string; cardId: string; from: "hand" | "drop" | "deck"; mode: "active" | "rest"; into?: PlayerId }
   /** Capacité [Activation] activée (9-4) : la carte est révélée si elle était en main. */
   | { type: "ABILITY_ACTIVATED"; player: PlayerId; uid: string; cardId: string; index: number; text: string }
   | { type: "CARDS_LOCKED"; uids: string[] }

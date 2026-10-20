@@ -20,7 +20,14 @@ export const KW = {
   superCombo: "super_combo", // 22-17
   energyExhaust: "energy_exhaust", // 22-31 [Fuite d'énergie]
   unique: "unique", // 22-39
+  barrier: "barrier", // 22-16
 } as const;
+
+/** 22-16 [Barrière] : la carte ne peut pas être choisie par les Capacités adverses. */
+export function hasBarrier(s: GameState, uid: string, db: CardDatabase): boolean {
+  for (const player of ["P1", "P2"] as const) if (hasKeyword(s, { player, uid }, KW.barrier, db)) return true;
+  return false;
+}
 
 export const cardHasKeyword = (card: CardDefinition | undefined, id: string): boolean =>
   card?.keywords.some((k) => k.id === id) ?? false;
@@ -43,7 +50,7 @@ export function keywordsOf(s: GameState, ref: CardRef, db: CardDatabase): Keywor
   if (p.leader.uid === ref.uid) {
     printed = leaderFace(p.leader, db)?.keywords ?? [];
   } else {
-    const card = p.battle.find((c) => c.uid === ref.uid);
+    const card = p.battle.find((c) => c.uid === ref.uid) ?? p.unison.find((c) => c.uid === ref.uid);
     if (!card) return [];
     printed = db.get(card.cardId)?.keywords ?? [];
   }

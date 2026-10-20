@@ -69,7 +69,9 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
     case "CHARGE_ENERGY":
       return a.uid === null ? "Ne pas placer d'Énergie" : `Placer en Énergie : ${nameOf(view, db, a.uid)}`;
     case "PLAY_CARD":
-      return `Jouer ${nameOf(view, db, a.uid)}${paymentText(view, db, a.payment.energy, a.payment.markers)}`;
+      return `Jouer ${nameOf(view, db, a.uid)}${a.x !== undefined ? ` pour ${a.x} (${a.x} marqueur(s))` : ""}${paymentText(view, db, a.payment.energy, a.payment.markers)}`;
+    case "UNION_FUSION":
+      return `Union-Fusion : jouer ${nameOf(view, db, a.uid)} en défaussant ${a.materials.map((u) => nameOf(view, db, u)).join(" et ")}${paymentText(view, db, a.payment.energy, a.payment.markers)}`;
     case "END_MAIN_PHASE":
       return "Terminer la phase principale (fin du tour)";
     case "ATTACK":
@@ -122,7 +124,7 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
     }
     case "PLAY_Z": {
       const card = findVisible(view, a.uid);
-      return `Jouer depuis le deck Z : ${card ? cardName(db, card.cardId) : a.uid}${a.x !== undefined ? ` (X = ${a.x}, ${a.x} marqueur(s))` : ""}${paymentText(
+      return `Jouer depuis le deck Z : ${card ? cardName(db, card.cardId) : a.uid}${a.x !== undefined ? ` (X = ${a.x}, ${a.x} marqueur(s))` : ""}${a.sacrifice ? ` en plaçant ${nameOf(view, db, a.sacrifice)} dans la Dispersion` : ""}${paymentText(
         view,
         db,
         a.payment.energy,
@@ -251,6 +253,8 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `${e.player} termine son tour.`;
     case "PLAY_DECLARED":
       return `${e.player} déclare jouer ${cardName(db, e.cardId)}.`;
+    case "UNION_ACTIVATED":
+      return `${e.player} active l'Union-Fusion de ${cardName(db, e.cardId)} (${e.materials.map((id) => cardName(db, id)).join(" + ")} vont dans la Dispersion).`;
     case "CARD_PLAYED":
       return `${cardName(db, e.cardId)} (${e.player}) arrive en Zone de Combat.`;
     case "COUNTER_WINDOW_OPENED":

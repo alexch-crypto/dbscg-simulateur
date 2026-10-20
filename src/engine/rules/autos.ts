@@ -14,7 +14,7 @@ import { abilitiesOf, type RawAbility } from "../cards/abilities";
 import type { Action, GameContext, GameEvent } from "../protocol";
 import { opponentOf, type CardInstance, type CardRef, type Continuation, type GameState, type PlayerId, type QueuedAuto } from "../state/types";
 import { battleEndStep, continueAttack, startBlockerStep } from "./battle";
-import { checkConditions, matchesFilter } from "./conditions";
+import { abilityConditions, checkConditions, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
 import { afterCounterLink } from "./counters";
 import { resumeResolution, startResolution } from "./effects";
@@ -33,22 +33,58 @@ export type Trigger =
   /** 8-1-3 : une carte attaque / est attaquée. */
   | { event: "attacks"; ref: CardRef }
   | { event: "attacked"; ref: CardRef }
-  /** Une carte quitte la Zone de Combat (mise KO en combat ou par une Capacité). */
-  | { event: "leaves_battle"; card: CardInstance }
+  /**
+   * Une carte quitte la Zone de Combat (mise KO en combat ou par une Capacité). `bySkillOf` : maître
+   * de la Capacité responsable ; `toDrop` : elle va dans une Dispersion ; `hadBlocker` : elle avait [Bloqueur].
+   */
+  | { event: "leaves_battle"; card: CardInstance; bySkillOf?: PlayerId; toDrop?: boolean; hadBlocker?: boolean }
+  /** Une Unisson quitte la Zone Unisson. */
+  | { event: "leaves_unison"; card: CardInstance }
   /** 5-7 : une carte est utilisée pour une Combo. */
   | { event: "used_in_combo"; card: CardInstance }
+  /** Un joueur active une Capacité [Contre]. */
+  | { event: "counter_activated"; player: PlayerId }
+  /** Un joueur active une Capacité [Union]. */
+  | { event: "union_activated"; player: PlayerId }
   /** 8-5-9 : fin du combat pendant lequel cette carte a été attaquée. */
   | { event: "battle_end_attacked"; ref: CardRef };
 
 /** Événements du fichier de cartes qui correspondent à chaque déclencheur (pour « cette carte »). */
 const SELF_EVENTS: Record<Trigger["event"], string[]> = {
-  played: ["played", "played_or_attacks"],
+  played: ["played", "played_or_attacks", "placed_in_battle_area"],
   attacks: ["attacks", "played_or_attacks"],
   attacked: ["attacked"],
   leaves_battle: ["leaves_battle_area_by_skill_or_ko"],
+  leaves_unison: ["leaves_unison_area"],
   used_in_combo: ["used_in_combo"],
+  counter_activated: [],
+  union_activated: [],
   battle_end_attacked: ["battle_end"],
 };
+
+/**
+ * Met en suspens les [Auto.] d'un joueur dont le déclencheur ne concerne pas « cette carte »
+ * (ex. « quand votre adversaire active un Contre ») : Leader, cartes de Combat et Unisson en jeu.
+ */
+function queueOthers(
+  s: GameState,
+  player: PlayerId,
+  event: string,
+  ctx: GameContext,
+  events: GameEvent[],
+  accept: (t: Record<string, unknown>) => boolean = () => true,
+): void {
+  const p = s.players[player];
+  const refs: CardRef[] = [{ player, uid: p.leader.uid }, ...[...p.battle, ...p.unison].map((c) => ({ player, uid: c.uid }))];
+  for (const ref of refs) {
+    const other = sourceOf(s, ref, ctx);
+    other?.abilities.forEach((ability, index) => {
+      const t = ability["trigger"] as Record<string, unknown> | undefined;
+      if (ability["kind"] !== "auto" || t?.["event"] !== event || !accept(t)) return;
+      enqueue(s, player, other, ability, index, events);
+    });
+  }
+}
 
 /** Carte (uid, numéro, maître, Capacités actuelles) désignée par une référence en jeu. */
 function sourceOf(s: GameState, ref: CardRef, ctx: GameContext) {
@@ -98,10 +134,27 @@ export function enqueueSteps(
 }
 
 /** Met en suspens les [Auto.] déclenchées par un événement (9-6-2). */
-export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, events: GameEvent[]): void {
+export function queueTriggers(
+  s: GameState,
+  trigger: Trigger,
+  ctx: GameContext,
+  events: GameEvent[],
+  /** Les Capacités de la carte concernée étaient annulées : seules les autres cartes réagissent. */
+  selfNegated = false,
+): void {
+  if (trigger.event === "counter_activated") {
+    queueOthers(s, opponentOf(trigger.player), "opponent_activates_counter", ctx, events);
+    return;
+  }
+  if (trigger.event === "union_activated") {
+    queueOthers(s, trigger.player, "you_activate_union", ctx, events);
+    return;
+  }
   // 1) Capacités « cette carte » de la carte concernée.
   let source: { uid: string; cardId: string; player: PlayerId; abilities: RawAbility[] } | null;
-  if ("ref" in trigger) {
+  if (selfNegated) {
+    source = null;
+  } else if ("ref" in trigger) {
     source = sourceOf(s, trigger.ref, ctx);
   } else {
     // La carte peut déjà avoir changé de zone (ex. mise KO) : on lit ses Capacités sur sa définition.
@@ -125,7 +178,23 @@ export function queueTriggers(s: GameState, trigger: Trigger, ctx: GameContext, 
     });
   }
 
-  // 2) « Quand vous jouez un <...> » sur les autres cartes en jeu du même joueur.
+  // 2) Déclencheurs portés par les autres cartes en jeu.
+  if (trigger.event === "played") {
+    // « Quand une carte de Combat adverse est jouée ».
+    const type = ctx.cards.get(trigger.card.cardId)?.type;
+    if (type === "battle" || type === "z_battle") queueOthers(s, opponentOf(trigger.card.owner), "opponent_plays_battle_card", ctx, events);
+  }
+  if (trigger.event === "leaves_battle") {
+    // « Quand une carte dans une Zone de Combat est placée dans une Dispersion ».
+    if (trigger.toDrop) for (const pl of ["P1", "P2"] as const) queueOthers(s, pl, "battle_card_to_drop", ctx, events);
+    // « Quand une de vos cartes de Combat avec [Bloqueur] quitte votre Zone de Combat via une Capacité adverse ».
+    const owner = trigger.card.owner;
+    if (trigger.hadBlocker && trigger.bySkillOf && trigger.bySkillOf !== owner) queueOthers(s, owner, "own_blocker_leaves_by_opponent_skill", ctx, events);
+  }
+  if (trigger.event === "used_in_combo") {
+    // « Quand vous utilisez un de vos <...> pour une Combo ».
+    queueOthers(s, trigger.card.owner, "you_combo_with", ctx, events, (t) => matchesFilter(trigger.card, t["filter"], ctx.cards, s) === true);
+  }
   if (trigger.event === "played") {
     const player = trigger.card.owner;
     const p = s.players[player];
@@ -213,18 +282,18 @@ function resolveQueued(s: GameState, ctx: GameContext, auto: QueuedAuto, events:
   }
 
   // 9-6-4-1-1 : les conditions sont vérifiées au moment de résoudre.
-  const conditions = checkConditions(s, auto.player, auto.ability["condition"], ctx.cards);
+  const conditions = checkConditions(s, auto.player, abilityConditions(auto.ability), ctx.cards, auto.source.uid);
   if (typeof conditions === "string") return cancel(`condition pas encore gérée par le moteur (${conditions})`);
   if (!conditions) return cancel("condition non remplie");
-  // 9-6-4 : coût de Capacité (pas encore géré pour les [Auto.]).
+  // 9-6-4-1 : avec un coût de Capacité, le joueur choisit de le payer entièrement ou pas du tout.
   const cost = auto.ability["cost"];
-  if (Array.isArray(cost) && cost.length > 0) return cancel("coût de Capacité pas encore géré par le moteur");
 
   if (limits["once_per_turn"]) s.turnUsage[onceKey] = (s.turnUsage[onceKey] ?? 0) + 1;
   if (typeof limits["limit"] === "number") s.turnUsage[limitKey] = (s.turnUsage[limitKey] ?? 0) + 1;
 
   // 9-6-5 à 9-6-7 : la Capacité s'active et ses effets se résolvent.
-  const steps = (auto.ability["effect"] ?? []) as Parameters<typeof startResolution>[4];
+  const effect = (auto.ability["effect"] ?? []) as Parameters<typeof startResolution>[4];
+  const steps = Array.isArray(cost) && cost.length > 0 ? [{ do: "optional", cost, then: effect }] : effect;
   startResolution(s, ctx, auto.player, auto.source, steps, { kind: "checkpoint" }, events);
 }
 
@@ -247,7 +316,7 @@ export function continueWith(s: GameState, ctx: GameContext, then: Continuation,
       battleEndStep(s, ctx, events);
       return;
     case "finish_play":
-      finishPlay(s, ctx, then.player, then.uid, events);
+      finishPlay(s, ctx, then.player, then.uid, events, then.markers);
       return;
     case "finish_z_play":
       finishZPlay(s, ctx, then.player, then.uid, then.markers, events);

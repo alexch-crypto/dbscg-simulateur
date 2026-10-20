@@ -4,6 +4,7 @@
 // Espace-temps, « jouez cette carte depuis votre main »...), Extras, Unissons, cartes Z.
 
 import type { CardDefinition } from "../cards/types";
+import { leaveUnison } from "./zones";
 import type { Action, GameContext, GameEvent, PaymentChoice } from "../protocol";
 import type { CardInstance, GameState, PlayerId } from "../state/types";
 import {
@@ -11,6 +12,7 @@ import {
   checkPayment,
   leaderColors,
   paymentForCost,
+  paymentSize,
   type CostModifier,
   type EnergyPayment,
   type EnergySource,
@@ -30,11 +32,22 @@ export function costModifiersFor(s: GameState, player: PlayerId, card: CardInsta
   return change === 0 ? [] : [{ kind: "total", amount: change }];
 }
 
-/** Paiement exigé pour jouer normalement une carte depuis la main (coût imprimé + modificateurs). */
-export function normalPlayPayment(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext): EnergyPayment | null {
+/**
+ * Paiement exigé pour jouer normalement une carte depuis la main (coût imprimé + modificateurs).
+ * `x` : coût X choisi pour une Unisson (1-2-2-2).
+ */
+export function normalPlayPayment(s: GameState, player: PlayerId, card: CardInstance, ctx: GameContext, x = 0): EnergyPayment | null {
   const def = ctx.cards.get(card.cardId);
   if (!def?.cost) return null;
-  return paymentForCost(applyCostModifiers(def.cost, costModifiersFor(s, player, card, ctx)));
+  return paymentForCost(applyCostModifiers(def.cost, costModifiersFor(s, player, card, ctx), x), x);
+}
+
+/** Valeurs de X possibles pour jouer une Unisson : au moins son coût de couleur (1-2-2-1), au plus les sources d'énergie. */
+export function unisonXValues(def: CardDefinition, sources: number): number[] {
+  const colorSum = Object.values(def.cost?.specified ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+  const values: number[] = [];
+  for (let x = Math.max(colorSum, 1); x <= sources; x++) values.push(x);
+  return values;
 }
 
 /**
@@ -93,7 +106,7 @@ export function enterBattleArea(
   ctx: GameContext,
   player: PlayerId,
   card: CardInstance,
-  from: "hand" | "drop",
+  from: "hand" | "drop" | "deck",
   mode: "active" | "rest",
   events: GameEvent[],
   via?: string,
@@ -109,6 +122,7 @@ export function enterBattleArea(
   card.mode = mode;
   card.faceUp = true;
   s.players[into].battle.push(card);
+  s.playedFrom[card.uid] = from;
   events.push({ type: "CARD_PLAYED_BY_SKILL", player, uid: card.uid, cardId: card.cardId, from, mode, ...(into !== player ? { into } : {}) });
   // 22-15-6 : jouée via [Espace-temps] => en Dimension parallèle à la fin du tour.
   if (via === "over_realm") s.effects.push({ uid: card.uid, kind: "warp_at_end_of_turn", untilTurn: s.turnNumber });
@@ -129,13 +143,19 @@ export function playBattleCard(
   const instance = p.hand[index]!;
   const card = ctx.cards.get(instance.cardId);
   if (!card) return `carte inconnue ${instance.cardId}`;
-  if (card.type !== "battle") return `5-5-2 : seules les cartes de Combat se jouent ainsi (pas encore géré : ${card.type})`;
+  if (card.type !== "battle" && card.type !== "unison") return `5-5-2 : seules les cartes de Combat et les Unissons se jouent ainsi (pas : ${card.type})`;
   const uniqueError = uniqueBlocks(s, instance, ctx.cards);
   if (uniqueError) return uniqueError;
+  // 13-2 : une Unisson se joue pour X Énergies (X choisi, au moins son coût de couleur).
+  const isUnison = card.type === "unison";
+  const minX = Math.max(1, Object.values(card.cost?.specified ?? {}).reduce((x, y) => x + (y ?? 0), 0));
+  if (isUnison && (action.x === undefined || !Number.isInteger(action.x) || action.x < minX)) {
+    return "1-2-2-2 : choisissez la valeur de X (au moins le coût de couleur de l'Unisson)";
+  }
 
   // 5-5-2-1 : révéler la carte, passer en mode Inertie les Énergies du coût, déclarer et jouer.
   // Si le coût ne peut pas être payé, la carte ne peut pas être déclarée (5-3-3).
-  const payment = normalPlayPayment(s, action.player, instance, ctx)!;
+  const payment = normalPlayPayment(s, action.player, instance, ctx, isUnison ? action.x : 0)!;
   const error = payEnergy(s, action.player, payment, action.payment, ctx);
   if (error) return error;
 
@@ -155,7 +175,8 @@ export function playBattleCard(
     s,
     ctx,
     { on: "play", player: action.player, cardUid: instance.uid, cardId: instance.cardId },
-    { kind: "finish_play", player: action.player, uid: instance.uid },
+    // 13-2 : l'Unisson arrive avec autant de marqueurs que d'Énergies passées en mode Inertie.
+    { kind: "finish_play", player: action.player, uid: instance.uid, ...(isUnison ? { markers: paymentSize(payment) } : {}) },
     events,
   );
   return null;
@@ -165,14 +186,26 @@ export function playBattleCard(
  * 5-5-2-3 : la carte de Combat est jouée dans la Zone de Combat, en mode Action (les effets qui
  * la jouent en mode Inertie le précisent). Puis « Quand cette carte est jouée » et point de contrôle.
  */
-export function finishPlay(s: GameState, ctx: GameContext, player: PlayerId, uid: string, events: GameEvent[]): void {
+export function finishPlay(s: GameState, ctx: GameContext, player: PlayerId, uid: string, events: GameEvent[], markers?: number): void {
   const p = s.players[player];
   const index = p.hand.findIndex((c) => c.uid === uid);
-  if (index >= 0) {
+  if (index >= 0 && markers !== undefined) {
+    // Unisson : une seule à la fois (3-11-4) ; l'ancienne quitte la Zone Unisson (Dispersion).
+    const instance = p.hand.splice(index, 1)[0]!;
+    for (const other of [...p.unison]) leaveUnison(s, ctx, player, other, events);
+    instance.mode = "active";
+    instance.faceUp = true;
+    instance.markers = markers;
+    p.unison.push(instance);
+    s.playedFrom[instance.uid] = "hand";
+    events.push({ type: "UNISON_PLAYED", player, uid: instance.uid, cardId: instance.cardId, markers });
+    queueTriggers(s, { event: "played", card: instance }, ctx, events);
+  } else if (index >= 0) {
     const instance = p.hand.splice(index, 1)[0]!;
     instance.mode = "active";
     instance.faceUp = true;
     p.battle.push(instance);
+    s.playedFrom[instance.uid] = "hand";
     events.push({ type: "CARD_PLAYED", player, uid: instance.uid, cardId: instance.cardId });
     // 9-6-9-4 : « Quand cette carte est jouée » se met en suspens.
     queueTriggers(s, { event: "played", card: instance }, ctx, events);

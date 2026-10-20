@@ -3,12 +3,14 @@
 import type { GameContext, GameEvent } from "../protocol";
 import type { CardInstance, GameState, PlayerId } from "../state/types";
 import { queueTriggers } from "./autos";
-import { removeIfUltimate } from "./keywords";
+import { hasKeyword, KW, removeIfUltimate } from "./keywords";
 
 /** 9-9-2 : les effets temporaires ne suivent pas une carte qui quitte la Zone de Combat. */
 export function forgetCard(s: GameState, uid: string): void {
   s.powerMods = s.powerMods.filter((m) => m.uid !== uid);
   s.effects = s.effects.filter((e) => e.uid !== uid);
+  delete s.playedFrom[uid];
+  s.endOfTurn = s.endOfTurn.filter((e) => e.uid !== uid);
 }
 
 /**
@@ -37,6 +39,8 @@ export function leaveUnison(s: GameState, ctx: GameContext, player: PlayerId, ca
     s.players[card.owner].drop.push(card);
     events.push({ type: "CARD_TO_DROP", player, uid: card.uid, cardId: card.cardId, from: "unison" });
   }
+  // « Quand cette carte quitte une Zone Unisson ».
+  queueTriggers(s, { event: "leaves_unison", card }, ctx, events);
 }
 
 /**
@@ -44,20 +48,31 @@ export function leaveUnison(s: GameState, ctx: GameContext, player: PlayerId, ca
  * retirée de la partie si elle a [Ultimate], 22-14-3). Déclenche « quand cette carte quitte la
  * Zone de Combat / est mise KO », sauf si ses Capacités étaient annulées (9-6-9-2).
  */
-export function koBattleCard(s: GameState, ctx: GameContext, player: PlayerId, card: CardInstance, events: GameEvent[]): void {
+export function koBattleCard(
+  s: GameState,
+  ctx: GameContext,
+  player: PlayerId,
+  card: CardInstance,
+  events: GameEvent[],
+  /** Maître de la Capacité qui met KO (absent : KO en combat). */
+  bySkillOf?: PlayerId,
+): void {
   const zone = s.players[player].battle;
   const index = zone.indexOf(card);
   if (index < 0) return;
   const negated = s.effects.some((e) => e.uid === card.uid && e.kind === "negate_all");
+  const hadBlocker = hasKeyword(s, { player, uid: card.uid }, KW.blocker, ctx.cards);
   zone.splice(index, 1);
   forgetCard(s, card.uid);
   events.push({ type: "CARD_KO", player, uid: card.uid, cardId: card.cardId });
-  if (removeIfUltimate(s, card, ctx.cards)) {
+  const removed = removeIfUltimate(s, card, ctx.cards);
+  if (removed) {
     events.push({ type: "CARD_REMOVED", player, uid: card.uid, cardId: card.cardId });
   } else {
     card.mode = "active";
     card.faceUp = true;
     s.players[card.owner].drop.push(card);
   }
-  if (!negated) queueTriggers(s, { event: "leaves_battle", card }, ctx, events);
+  // Les [Auto.] de la carte elle-même ne se déclenchent pas si ses Capacités étaient annulées.
+  queueTriggers(s, { event: "leaves_battle", card, toDrop: !removed, hadBlocker, ...(bySkillOf ? { bySkillOf } : {}) }, ctx, events, negated);
 }

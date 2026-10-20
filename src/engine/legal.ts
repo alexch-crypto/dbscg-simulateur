@@ -21,7 +21,8 @@ import { suggestZPayment, zAwakenOptions, zPlayOptions } from "./rules/zdeck";
 import { counterOptions, suggestCounterPayment } from "./rules/counters";
 import { availableEnergySources, findPayment } from "./rules/energy";
 import { uniqueBlocks } from "./rules/keywords";
-import { normalPlayPayment } from "./rules/play";
+import { normalPlayPayment, unisonXValues } from "./rules/play";
+import { suggestUnionPayment, unionOptions } from "./rules/union";
 import { PLAYER_IDS, type GameState, type PlayerId } from "./state/types";
 
 /** Toutes les façons de choisir `k` positions parmi `n` (ordre croissant). */
@@ -73,20 +74,30 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
         const sources = availableEnergySources(s, player, ctx.cards);
         for (const c of s.players[player].hand) {
           const card = ctx.cards.get(c.cardId);
-          if (card?.type !== "battle") continue;
+          if (card?.type !== "battle" && card?.type !== "unison") continue;
           if (uniqueBlocks(s, c, ctx.cards)) continue; // 22-39
-          const payment = normalPlayPayment(s, player, c, ctx);
-          const chosen = payment && findPayment(sources, payment);
-          if (!chosen) continue; // 5-3-3 : coût impossible à payer.
-          actions.push({
-            type: "PLAY_CARD",
-            player,
-            uid: c.uid,
-            payment: {
-              energy: chosen.filter((src) => src.id !== "marker").map((src) => src.id),
-              markers: chosen.filter((src) => src.id === "marker").length,
-            },
-          });
+          // 13-2 : une Unisson se joue pour X (un coup par valeur de X payable).
+          const xs: (number | undefined)[] = card.type === "unison" ? unisonXValues(card, sources.length) : [undefined];
+          for (const x of xs) {
+            const payment = normalPlayPayment(s, player, c, ctx, x ?? 0);
+            const chosen = payment && findPayment(sources, payment);
+            if (!chosen) continue; // 5-3-3 : coût impossible à payer.
+            actions.push({
+              type: "PLAY_CARD",
+              player,
+              uid: c.uid,
+              payment: {
+                energy: chosen.filter((src) => src.id !== "marker").map((src) => src.id),
+                markers: chosen.filter((src) => src.id === "marker").length,
+              },
+              ...(x !== undefined ? { x } : {}),
+            });
+          }
+        }
+        // 22-13-4 : [Union-Fusion] (une action par groupe de cartes utilisables).
+        for (const option of unionOptions(s, player, ctx)) {
+          const payment = suggestUnionPayment(s, player, option, ctx);
+          for (const materials of option.materials) actions.push({ type: "UNION_FUSION", player, uid: option.uid, materials, payment });
         }
         for (const attacker of possibleAttackers(s, player, ctx)) {
           for (const target of possibleTargets(s, player, ctx)) actions.push({ type: "ATTACK", player, attacker, target });
@@ -102,7 +113,13 @@ export function getLegalActions(s: GameState, player: PlayerId, ctx: GameContext
         }
         // 14-18 : cartes du deck Z (une action par valeur de X pour les Unissons).
         for (const z of zPlayOptions(s, player, ctx)) {
-          for (const { x, payment } of z.payments) {
+          for (const { x, payment, alt } of z.payments) {
+            if (alt) {
+              for (const sacrifice of alt.sacrifice) {
+                actions.push({ type: "PLAY_Z", player, uid: z.uid, ...suggestZPayment(s, player, payment, alt.zCost, ctx), sacrifice });
+              }
+              continue;
+            }
             actions.push({ type: "PLAY_Z", player, uid: z.uid, ...suggestZPayment(s, player, payment, z.zCost, ctx), ...(x !== undefined ? { x } : {}) });
           }
         }

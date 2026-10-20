@@ -51,14 +51,16 @@ import {
 } from "../state/types";
 import { continueWith, queueTriggers } from "./autos";
 import { drawCards, shuffleDeck } from "./basic";
-import { energyCostOf, matchesFilter } from "./conditions";
+import { checkCondition, energyCostOf, matchesFilter, matchesSpec } from "./conditions";
 import { openCounterWindow } from "./counters";
 import { checkDefeat } from "./defeat";
-import { keywordsOf, readyBlockedByEffect, removeIfUltimate } from "./keywords";
+import { hasBarrier, keywordsOf, readyBlockedByEffect, removeIfUltimate } from "./keywords";
+import { leaderFace } from "./leader";
 import { enterBattleArea } from "./play";
 import { powerOf } from "./battle";
 import { removeLeaderZ } from "./zdeck";
-import { forgetCard, koBattleCard, removeMarkers } from "./zones";
+import { forgetCard, koBattleCard, leaveUnison, removeMarkers } from "./zones";
+import { abilitiesOf } from "../cards/abilities";
 
 type Json = Record<string, unknown>;
 const isObject = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -175,25 +177,41 @@ function modeHolder(s: GameState, c: Candidate): { mode: "active" | "rest" } {
   return c.zone === "leader" ? s.players[c.player].leader : c.card!;
 }
 
-/** Cartes qui correspondent à une description de cible ; null si la description n'est pas gérée. */
+/**
+ * Cartes qui correspondent à une description de cible ; null si la description n'est pas gérée.
+ * 22-16 [Barrière] : une carte adverse avec Barrière ne peut pas être choisie, sauf « en ignorant
+ * la Capacité Barrière ». `any_of` : « parmi ... , ... et ... » (plusieurs descriptions réunies).
+ */
 function candidates(s: GameState, ctx: GameContext, target: Json): Candidate[] | null {
   const r = s.resolving!;
+  if (Array.isArray(target["any_of"])) {
+    const all: Candidate[] = [];
+    for (const sub of target["any_of"] as Json[]) {
+      const found = candidates(s, ctx, sub);
+      if (found === null) return null;
+      for (const c of found) if (!all.some((x) => x.uid === c.uid)) all.push(c);
+    }
+    return all;
+  }
   const owners: PlayerId[] =
     target["owner"] === "opponent" ? [opponentOf(r.player)] : target["owner"] === "any" ? [r.player, opponentOf(r.player)] : [r.player];
   const zones = (Array.isArray(target["zone"]) ? target["zone"] : [target["zone"]]) as string[];
   const result: Candidate[] = [];
+  const blocked = (player: PlayerId, uid: string) => player !== r.player && target["ignore_barrier"] !== true && hasBarrier(s, uid, ctx.cards);
   for (const player of owners) {
     const p = s.players[player];
     for (const zone of zones) {
       if (zone === "leader") {
-        result.push({ uid: p.leader.uid, player, zone: "leader" });
+        const ok = leaderMatches(s, player, target, ctx);
+        if (ok === null) return null;
+        if (ok && !blocked(player, p.leader.uid)) result.push({ uid: p.leader.uid, player, zone: "leader" });
       } else if (zone === "battle" || zone === "energy" || zone === "combo" || zone === "unison") {
         for (const card of p[zone]) {
           // « carte de Combat » : pas les Extras Z posées dans la Zone de Combat.
           if (zone === "battle" && !["battle", "z_battle"].includes(ctx.cards.get(card.cardId)?.type ?? "")) continue;
-          const ok = matchesFilter(card, target["filter"], ctx.cards, s);
+          const ok = matchesSpec(card, target, ctx.cards, s);
           if (ok === null) return null;
-          if (ok) result.push({ uid: card.uid, player, zone, card });
+          if (ok && !blocked(player, card.uid)) result.push({ uid: card.uid, player, zone, card });
         }
       } else {
         return null;
@@ -201,6 +219,18 @@ function candidates(s: GameState, ctx: GameContext, target: Json): Candidate[] |
     }
   }
   return result;
+}
+
+/** Le Leader (sa face visible, ou le Leader Z) correspond-il à la description ? */
+function leaderMatches(s: GameState, player: PlayerId, target: Json, ctx: GameContext): boolean | null {
+  if (!target["filter"] && !target["filter_any"]) return true;
+  const leader = s.players[player].leader;
+  const id = leader.z?.cardId ?? leader.cardId;
+  const def = ctx.cards.get(id);
+  const face = leaderFace(leader, ctx.cards);
+  if (!def || !face) return false;
+  const db = new Map([[id, { ...def, ...face }]]);
+  return matchesSpec({ uid: leader.uid, cardId: id, owner: player, mode: leader.mode, faceUp: true }, target, db, s);
 }
 
 function findCandidate(s: GameState, uid: string): Candidate | null {
@@ -217,8 +247,9 @@ function findCandidate(s: GameState, uid: string): Candidate | null {
 
 /** Nombre de cibles : « jusqu'à N » => 0..N (5-2-4) ; « N » => autant que possible jusqu'à N (5-2-3). */
 function targetCount(spec: Json, available: number): { min: number; max: number } {
-  // « Choisissez n'importe quel nombre de cartes » : de 0 à toutes.
+  // « Choisissez n'importe quel nombre de cartes » : de 0 à toutes. « Choisissez toutes les ... ».
   if (spec["any_number"] === true) return { min: 0, max: available };
+  if (spec["all"] === true) return { min: available, max: available };
   if (typeof spec["up_to"] === "number") return { min: 0, max: Math.min(spec["up_to"], available) };
   const n = typeof spec["count"] === "number" ? spec["count"] : 1;
   const max = Math.min(n, available);
@@ -326,7 +357,7 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
       return false;
     }
     case "ko":
-      for (const c of chosen) if (c.zone === "battle") koBattleCard(s, ctx, c.player, c.card!, events);
+      for (const c of chosen) if (c.zone === "battle") koBattleCard(s, ctx, c.player, c.card!, events, r.player);
       return false;
     case "power_mod": {
       const until = step["duration"] as "turn" | "battle";
@@ -363,7 +394,7 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
     }
     case "remove_markers": {
       // 21-9 : retirer des marqueurs d'une Unisson (à 0, elle quitte la Zone Unisson).
-      const n = typeof step["count"] === "number" ? step["count"] : 1;
+      const n = typeof step["count"] === "number" ? step["count"] : step["count"] === "X" ? (r.x ?? 0) : 1;
       for (const c of chosen) if (c.zone === "unison") removeMarkers(s, ctx, c.player, c.card!, n, events);
       return false;
     }
@@ -402,12 +433,84 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
         } else {
           toDrop(s, c.card);
         }
+        if (c.zone === "battle") queueTriggers(s, { event: "leaves_battle", card: c.card, bySkillOf: r.player, toDrop: true }, ctx, events);
       }
       return false;
     }
     case "choose":
       // « Choisissez une carte » : seulement mémorisée (save_as) pour les instructions suivantes.
       return false;
+    case "play_from": {
+      const p = s.players[r.player];
+      const from = step["zone"] as "drop" | "deck";
+      for (const uid of uids) {
+        const card = p[from].find((c) => c.uid === uid);
+        if (!card) continue;
+        const mode = (step["mode"] as "rest" | undefined) ?? "active";
+        if (ctx.cards.get(card.cardId)?.type === "unison") {
+          // Unisson jouée par un effet : avec le nombre de marqueurs indiqué (une seule à la fois, 3-11-4).
+          p[from].splice(p[from].indexOf(card), 1);
+          for (const other of [...p.unison]) leaveUnison(s, ctx, r.player, other, events);
+          card.faceUp = true;
+          card.mode = mode;
+          card.markers = (step["markers"] as number) ?? 0;
+          p.unison.push(card);
+          s.playedFrom[card.uid] = from;
+          events.push({ type: "UNISON_PLAYED", player: r.player, uid: card.uid, cardId: card.cardId, markers: card.markers });
+          queueTriggers(s, { event: "played", card }, ctx, events);
+        } else {
+          const error = enterBattleArea(s, ctx, r.player, card, from, mode, events);
+          if (error) events.push({ type: "NOT_IMPLEMENTED", player: r.player, cardId: card.cardId, what: error });
+        }
+      }
+      if (from === "deck" && step["then"] === "shuffle_deck") shuffleDeck(s, r.player, events);
+      return false;
+    }
+    case "hand_to_deck_bottom":
+    case "hand_to_z_energy": {
+      const p = s.players[r.player];
+      const cards = uids.map((uid) => takeFromHand(s, r.player, uid)).filter((c): c is CardInstance => c !== null);
+      for (const c of cards) {
+        c.mode = "active";
+        if (step.do === "hand_to_deck_bottom") {
+          c.faceUp = false;
+          p.deck.push(c);
+        } else {
+          c.faceUp = true;
+          p.zEnergy.push(c);
+        }
+      }
+      if (cards.length > 0) {
+        events.push({
+          type: "EFFECT_NOTE",
+          player: r.player,
+          cardId: r.source.cardId,
+          text:
+            step.do === "hand_to_deck_bottom"
+              ? `${cards.length} carte(s) de la main placée(s) au-dessous du deck`
+              : `${cards.map((c) => ctx.cards.get(c.cardId)?.name ?? c.cardId).join(", ")} rajoutée(s) aux Énergies Z`,
+        });
+      }
+      return false;
+    }
+    case "activate_from_hand": {
+      const p = s.players[r.player];
+      for (const uid of uids) {
+        const card = takeFromHand(s, r.player, uid);
+        if (!card) continue;
+        const found = mainAbilityOf(ctx, card.cardId)!;
+        toDrop(s, card);
+        events.push({ type: "ABILITY_ACTIVATED", player: r.player, uid: card.uid, cardId: card.cardId, index: found.index, text: String(found.ability["text"] ?? "") });
+        const limit = (found.ability["limits"] ?? {}) as Json;
+        if (typeof limit["limit"] === "number") {
+          const key = `limit:${r.player}:${card.cardId}#${found.index}`;
+          s.turnUsage[key] = (s.turnUsage[key] ?? 0) + 1;
+        }
+        void p;
+        insertSteps(s, (found.ability["effect"] ?? []) as EffectStep[]);
+      }
+      return false;
+    }
     case "set_power": {
       // « La puissance de cette carte devient la puissance de la carte choisie » (puissance actuelle).
       const value = r.memo.length > 0 ? Number(r.memo[0]) : 0;
@@ -752,7 +855,7 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
 
     case "opponent_attack_tax": {
       const rule = step["rule"];
-      if (rule !== "discard_2_per_attack" && rule !== "rest_one_active_card_per_attack") break;
+      if (rule !== "discard_2_per_attack" && rule !== "rest_one_active_card_per_attack" && rule !== "hand_to_z_energy_per_attack") break;
       const d = untilTurnFor(s, step["duration"]);
       if (!d) break;
       s.attackTaxes.push({ player: opp, rule, untilTurn: d.untilTurn });
@@ -763,7 +866,9 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
         text:
           rule === "discard_2_per_attack"
             ? `${opp} doit défausser deux cartes de sa main à chaque attaque`
-            : `${opp} doit passer une de ses cartes en mode Action en mode Inertie à chaque attaque`,
+            : rule === "hand_to_z_energy_per_attack"
+              ? `${opp} doit rajouter une carte de sa main à ses Énergies Z à chaque attaque`
+              : `${opp} doit passer une de ses cartes en mode Action en mode Inertie à chaque attaque`,
       });
       return false;
     }
@@ -901,7 +1006,7 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       const looked = p.deck.slice(0, step["count"]);
       const options: string[] = [];
       for (const card of looked) {
-        const ok = matchesFilter(card, pick["filter"], ctx.cards);
+        const ok = matchesSpec(card, pick, ctx.cards);
         if (ok === null) {
           notImplemented(s, describeStep(step), events);
           return false;
@@ -953,6 +1058,22 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
 
     case "if": {
       const check = step["check"];
+      // « Si cette carte a été jouée depuis une Dispersion », « si c'est votre tour », « quand votre
+      // total de points de vie est de 4 ou moins ».
+      if (isObject(check) && typeof check["card"] !== "string") {
+        let ok = true;
+        for (const [key, value] of Object.entries(check)) {
+          if (key === "played_from") ok &&= s.playedFrom[r.source.uid] === value;
+          else if (key === "your_turn") ok &&= (s.turnPlayer === r.player) === value;
+          else if (key === "life_at_most") ok &&= p.life.length <= (value as number);
+          else {
+            notImplemented(s, describeStep(step), events);
+            return false;
+          }
+        }
+        if (ok) insertSteps(s, (step["then"] ?? []) as EffectStep[]);
+        return false;
+      }
       if (!isObject(check) || typeof check["card"] !== "string") break;
       const uids = r.saved[check["card"]] ?? [];
       const ok = uids.some((uid) => {
@@ -1031,6 +1152,183 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
       return false;
     }
 
+    case "play_from": {
+      // « Jouez jusqu'à une carte ... depuis votre Dispersion / votre deck » (5-5-3).
+      const zone = step["zone"];
+      if (zone !== "drop" && zone !== "deck") break;
+      const options: string[] = [];
+      for (const card of p[zone]) {
+        const type = ctx.cards.get(card.cardId)?.type;
+        if (type !== "battle" && type !== "unison") continue;
+        const ok = matchesSpec(card, step, ctx.cards, s);
+        if (ok === null) {
+          notImplemented(s, describeStep(step), events);
+          return false;
+        }
+        if (ok) options.push(card.uid);
+      }
+      if (zone === "deck") events.push({ type: "DECK_LOOKED", player: r.player, count: p.deck.length });
+      const looked = zone === "deck" ? p.deck.filter((c) => options.includes(c.uid)).map((c) => ({ uid: c.uid, cardId: c.cardId })) : undefined;
+      const waiting = askOrApply(s, ctx, step, r.player, options, targetCount(step, options.length), events, looked && looked.length > 0 ? looked : undefined);
+      // Rien à jouer : on mélange quand même le deck si on y a cherché.
+      if (!waiting && options.length === 0 && zone === "deck" && step["then"] === "shuffle_deck") shuffleDeck(s, r.player, events);
+      return waiting;
+    }
+
+    case "life_to_hand_until": {
+      // « Rajoutez à votre main des cartes de vos points de vie jusqu'à avoir N points de vie. »
+      const n = p.life.length - (step["value"] as number);
+      if (n <= 0) return false;
+      s.pending = { type: "CHOOSE_LIFE", player: r.player, min: n, max: n, prompt: `Rajoutez à votre main ${n} carte(s) de vos points de vie` };
+      return true;
+    }
+
+    case "opponent_life_to_drop": {
+      // « Votre adversaire place une carte de ses points de vie dans sa Dispersion » (il choisit).
+      const n = Math.min((step["count"] as number) ?? 1, s.players[opp].life.length);
+      if (n <= 0) return false;
+      s.pending = { type: "CHOOSE_LIFE", player: opp, min: n, max: n, prompt: `Placez ${n} carte(s) de vos points de vie dans votre Dispersion`, to: "drop" };
+      return true;
+    }
+
+    case "deal_damage": {
+      // « Infligez 1 dégât à votre adversaire » (21-3) : il choisit ses cartes de Vie.
+      const n = (step["count"] as number) ?? 1;
+      if (s.players[opp].life.length === 0 || n <= 0) return false;
+      events.push({ type: "DAMAGE_DEALT", player: opp, amount: n, critical: false });
+      s.pending = { type: "TAKE_DAMAGE", player: opp, amount: n, critical: false, fromEffect: true };
+      return true;
+    }
+
+    case "choose_one": {
+      // « Choisissez l'un — » : le joueur choisit une des options.
+      const options = (step["options"] ?? []) as Json[];
+      s.pending = {
+        type: "CHOOSE_OPTION",
+        player: r.player,
+        prompt: "Choisissez l'un",
+        options: options.map((o, i) => ({ id: String(i), label: String(o["label"] ?? `Option ${i + 1}`) })),
+      };
+      return true;
+    }
+
+    case "keep_one_each_bottom_rest": {
+      // Polunga : garder une de vos cartes de Combat et une adverse (en ignorant Barrière), les
+      // autres cartes de Combat vont au-dessous du deck de leur propriétaire.
+      insertSteps(s, [
+        { do: "choose", target: { owner: "self", zone: "battle", count: 1 }, save_as: "__keep_self" },
+        { do: "choose", target: { owner: "opponent", zone: "battle", count: 1, ignore_barrier: true }, save_as: "__keep_opp" },
+        { do: "bottom_others" },
+      ]);
+      return false;
+    }
+
+    case "bottom_others": {
+      const keep = new Set([...(r.saved["__keep_self"] ?? []), ...(r.saved["__keep_opp"] ?? [])]);
+      for (const player of [r.player, opp]) {
+        const zone = s.players[player].battle;
+        for (const card of [...zone]) {
+          const type = ctx.cards.get(card.cardId)?.type;
+          if (keep.has(card.uid) || (type !== "battle" && type !== "z_battle")) continue;
+          zone.splice(zone.indexOf(card), 1);
+          forgetCard(s, card.uid);
+          if (removeIfUltimate(s, card, ctx.cards)) {
+            events.push({ type: "CARD_REMOVED", player, uid: card.uid, cardId: card.cardId });
+            continue;
+          }
+          card.mode = "active";
+          card.faceUp = false;
+          s.players[card.owner].deck.push(card);
+          events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: `${ctx.cards.get(card.cardId)?.name ?? card.cardId} est placée au-dessous du deck de ${card.owner}` });
+          queueTriggers(s, { event: "leaves_battle", card }, ctx, events);
+        }
+      }
+      return false;
+    }
+
+    case "at_end_of_turn": {
+      // « Passez-la en mode Action / retournez cette carte dans votre main à la fin du tour. »
+      const then = ((step["then"] ?? []) as Json[])[0];
+      const action = then?.["do"] === "set_active" ? "set_active" : then?.["do"] === "return_to_hand" ? "return_to_hand" : null;
+      if (!action || then?.["target"] !== "this") break;
+      if (findCandidate(s, r.source.uid)) s.endOfTurn.push({ player: r.player, uid: r.source.uid, action, turn: s.turnNumber });
+      return false;
+    }
+
+    case "remove_this_at_end_of_turn": {
+      if (findCandidate(s, r.source.uid)) s.endOfTurn.push({ player: r.player, uid: r.source.uid, action: "remove_from_game", turn: s.turnNumber });
+      return false;
+    }
+
+    case "combo_power_mod": {
+      // « Cette carte gagne +X de puissance de Combo pour tout le combat » (elle est dans la Zone de Combo).
+      if (step["target"] !== "this") break;
+      if (!p.combo.some((c) => c.uid === r.source.uid)) return false;
+      s.powerMods.push({ uid: r.source.uid, amount: step["amount"] as number, until: "battle", combo: true });
+      events.push({ type: "EFFECT_NOTE", player: r.player, cardId: r.source.cardId, text: `+${step["amount"] as number} de puissance de Combo pour tout le combat` });
+      return false;
+    }
+
+    case "hand_to_deck_bottom":
+    case "hand_to_z_energy": {
+      // « Placez une carte de votre main au-dessous de votre deck » / « rajoutez-la à vos Énergies Z ».
+      const options = handOptions(s, ctx, r.player, step["filter"]);
+      if (options === null) break;
+      return askOrApply(s, ctx, step, r.player, options, targetCount(step, options.length), events);
+    }
+
+    case "add_markers": {
+      // « Rajoutez un marqueur sur cette carte » (Unisson).
+      const unison = p.unison.find((c) => c.uid === r.source.uid);
+      if (!unison) return false;
+      unison.markers = (unison.markers ?? 0) + ((step["count"] as number) ?? 1);
+      events.push({ type: "MARKERS_CHANGED", player: r.player, uid: unison.uid, cardId: unison.cardId, markers: unison.markers });
+      return false;
+    }
+
+    case "search_deck": {
+      // « Rajoutez à votre main jusqu'à un ... depuis votre deck, puis mélangez votre deck. »
+      insertSteps(s, [
+        { do: "look_top_deck", count: p.deck.length, pick: { up_to: step["up_to"] ?? 1, filter: step["filter"], to: "hand", reveal: true }, then: "shuffle_deck" },
+      ]);
+      return false;
+    }
+
+    case "next_union_discount":
+    case "next_extra_z_discount": {
+      const reduce = (step["reduce"] ?? {}) as Json;
+      s.nextDiscounts.push({
+        player: r.player,
+        on: step.do === "next_union_discount" ? "union" : "extra_z",
+        filter: (step["filter"] ?? {}) as Json,
+        colors: (reduce["specified"] ?? {}) as Record<string, number>,
+        generic: (reduce["generic"] as number) ?? 0,
+        untilTurn: s.turnNumber,
+      });
+      events.push({
+        type: "EFFECT_NOTE",
+        player: r.player,
+        cardId: r.source.cardId,
+        text: step.do === "next_union_discount" ? "le prochain coût de Capacité Union sera réduit ce tour" : "la prochaine Extra Z placée ce tour coûtera moins cher",
+      });
+      return false;
+    }
+
+    case "activate_from_hand": {
+      // « Activez la Capacité Activation : Principale de jusqu'à un {X} dans votre main » : la carte
+      // est placée dans la Dispersion (12-2) et sa Capacité se résout, sans payer le coût de la carte.
+      const options = handOptions(s, ctx, r.player, step["filter"]);
+      if (options === null) break;
+      const usable = options.filter((uid) => {
+        const card = p.hand.find((c) => c.uid === uid)!;
+        const found = mainAbilityOf(ctx, card.cardId);
+        if (!found) return false;
+        const limit = (found.ability["limits"] ?? {}) as Json;
+        return typeof limit["limit"] !== "number" || (s.turnUsage[`limit:${r.player}:${card.cardId}#${found.index}`] ?? 0) < limit["limit"];
+      });
+      return askOrApply(s, ctx, step, r.player, usable, targetCount(step, usable.length), events);
+    }
+
     case "counter_window_play": {
       // Instruction interne : 22-10-3-1 — une Capacité qui joue une carte ouvre une fenêtre de
       // [Contre : Mise en jeu] avant de se résoudre.
@@ -1054,6 +1352,13 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
   }
   notImplemented(s, describeStep(step), events);
   return false;
+}
+
+/** Première Capacité [Activation : Principale] d'une carte (et sa position). */
+function mainAbilityOf(ctx: GameContext, cardId: string): { ability: Json; index: number } | null {
+  const list = abilitiesOf(ctx.cards, ctx.cards.get(cardId));
+  const index = list.findIndex((a) => a["kind"] === "activate" && a["timing"] === "main");
+  return index < 0 ? null : { ability: list[index]!, index };
 }
 
 /** Numéro de carte d'un uid, où qu'il soit. */
@@ -1083,6 +1388,9 @@ function canPay(s: GameState, ctx: GameContext, player: PlayerId, cost: EffectSt
       if (!options || options.length < ((c["count"] as number) ?? 1)) return false;
     } else if (c.do === "z_energy_to_drop") {
       if (s.players[player].zEnergy.length < ((c["count"] as number) ?? 1)) return false;
+    } else if (c.do === "hand_to_deck_bottom" || c.do === "hand_to_z_energy") {
+      const options = handOptions(s, ctx, player, c["filter"]);
+      if (!options || options.length < ((c["count"] as number) ?? 1)) return false;
     } else if (c.do === "life_to_hand") {
       if (s.players[player].life.length < ((c["count"] as number) ?? 1)) return false;
     }
@@ -1144,7 +1452,11 @@ export function answerPositions(
   if (!indices.every((i) => Number.isInteger(i) && i >= 0 && i < zone.length)) return `position de ${label} invalide`;
   const sorted = [...indices].sort((a, b) => a - b);
   const taken = [...sorted].reverse().map((i) => zone.splice(i, 1)[0]!).reverse();
-  if (pending.type === "CHOOSE_LIFE") {
+  if (pending.type === "CHOOSE_LIFE" && pending.to === "drop") {
+    // Vers la Dispersion (zone publique) : les cartes sont révélées.
+    for (const c of taken) toDrop(s, c);
+    if (taken.length > 0) events.push({ type: "CARDS_DISCARDED", player: owner, cardIds: taken.map((c) => c.cardId) });
+  } else if (pending.type === "CHOOSE_LIFE") {
     const cardIds = taken.map((c) => (c.faceUp ? c.cardId : null));
     for (const c of taken) c.faceUp = false;
     s.players[owner].hand.push(...taken);
@@ -1174,6 +1486,9 @@ export function answerOption(
   if (step.do === "optional") {
     const chosen = action.id === "yes" ? [...((step["cost"] ?? []) as EffectStep[]), ...((step["then"] ?? []) as EffectStep[])] : ((step["else"] ?? []) as EffectStep[]);
     insertSteps(s, chosen);
+  } else if (step.do === "choose_one") {
+    const option = ((step["options"] ?? []) as Json[])[Number(action.id)];
+    insertSteps(s, ((option?.["steps"] ?? []) as EffectStep[]));
   } else if (step.do === "negate_one_keyword") {
     negateKeyword(s, step, r.memo.shift()!, action.id, events);
     if (askKeyword(s, ctx, step, events)) return null;

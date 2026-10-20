@@ -10,7 +10,7 @@
 import { abilitiesOf } from "../cards/abilities";
 import type { GameContext } from "../protocol";
 import type { CardInstance, GameState, PlayerId } from "../state/types";
-import { checkConditions, matchesFilter } from "./conditions";
+import { abilityConditions, checkConditions, matchesFilter } from "./conditions";
 import type { CostModifier } from "./energy";
 import type { Color } from "../cards/types";
 import { leaderCardId } from "./leader";
@@ -28,7 +28,7 @@ export function activePermanentEffects(
   const result: Json[] = [];
   for (const ability of abilitiesOf(ctx.cards, ctx.cards.get(card.cardId), side)) {
     if (ability["kind"] !== "permanent") continue;
-    if (checkConditions(s, player, ability["condition"], ctx.cards, card.uid) !== true) continue;
+    if (checkConditions(s, player, abilityConditions(ability), ctx.cards, card.uid) !== true) continue;
     for (const e of (ability["effect"] ?? []) as Json[]) result.push(e);
   }
   return result;

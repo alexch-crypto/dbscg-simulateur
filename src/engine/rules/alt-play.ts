@@ -20,7 +20,7 @@ import type { Action, GameContext, GameEvent, PaymentChoice } from "../protocol"
 import { opponentOf, type CardInstance, type EffectStep, type GameState, type PlayerId } from "../state/types";
 import { queueTriggers } from "./autos";
 import { drawCards } from "./basic";
-import { checkConditions, currentEnergyCost, energyCostOf, matchesFilter } from "./conditions";
+import { abilityConditions, checkConditions, currentEnergyCost, energyCostOf, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
 import { startResolution } from "./effects";
 import { availableEnergySources, findPayment, type EnergyPayment } from "./energy";
@@ -118,7 +118,7 @@ export function successorOptions(s: GameState, player: PlayerId, ctx: GameContex
       if (ability["kind"] !== "successor") return;
       const limits = (ability["limits"] ?? {}) as Json;
       if (typeof limits["limit"] === "number" && (s.turnUsage[`limit:${player}:${card.cardId}#${index}`] ?? 0) >= limits["limit"]) return;
-      if (checkConditions(s, player, ability["condition"], ctx.cards, card.uid) !== true) return;
+      if (checkConditions(s, player, abilityConditions(ability), ctx.cards, card.uid) !== true) return;
       // Coût de Capacité : énergie (éventuellement « au choix »), « piochez X ».
       let variants: EnergyPayment[] = [{ colors: {}, generic: 0 }];
       let draw = 0;

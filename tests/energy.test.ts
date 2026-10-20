@@ -210,11 +210,11 @@ describe("5-5-2 : jouer une carte de Combat", () => {
     expectRefused(s, { type: "PLAY_CARD", player: "P1", uid: s.players.P1.life[0]!.uid, payment: payment([]) }, "votre main");
   });
 
-  it("les Extras ne se jouent pas encore (Contres à venir)", () => {
+  it("12-2 : une Extra ne se « joue » pas : elle s'active (Contre, Activation)", () => {
     const s = p1Main();
     const kinto = give(s, "P1", "BT3-104", "hand");
     const e = give(s, "P1", "BT24-105", "energy");
-    expectRefused(s, { type: "PLAY_CARD", player: "P1", uid: kinto.uid, payment: { energy: [e.uid], markers: 0 } }, "pas encore géré");
+    expectRefused(s, { type: "PLAY_CARD", player: "P1", uid: kinto.uid, payment: { energy: [e.uid], markers: 0 } }, "seules les cartes de Combat et les Unissons");
   });
 
   it("7-3-4-1 : on ne joue pas de carte pendant la phase de Recharge, ni pendant le tour adverse", () => {

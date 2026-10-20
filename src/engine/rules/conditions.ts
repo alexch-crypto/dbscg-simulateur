@@ -55,7 +55,7 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
       return me.energy.some((e) => e.uid !== self && matchesFilter(e, c["filter"], db, s) === true);
     case "control_unison":
     case "control_z_unison": {
-      // « Si vous avez une Unisson (Z) verte en jeu (avec X marqueurs ou plus) ».
+      // « Si vous avez une Unisson (Z) verte (avec un coût de couleur de 2 / X marqueurs ou plus) en jeu ».
       const filter = (c["filter"] ?? {}) as Json;
       const { min_markers: minMarkers, ...rest } = filter;
       return me.unison.some(
@@ -85,9 +85,48 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
       if (results.some((r) => r === true)) return true;
       return results.some((r) => r === null) ? null : false;
     }
+    case "all_of": {
+      const results = (c["of"] as Json[]).map((sub) => checkCondition(s, player, sub, db, self));
+      if (results.some((r) => r === false)) return false;
+      return results.some((r) => r === null) ? null : true;
+    }
+    case "your_turn":
+      return s.turnPlayer === player;
+    case "opponent_life_at_least":
+      return opp.life.length >= num("value");
+    case "this_in_battle":
+      // « Si cette carte est en combat » (attaquante ou carte de défense).
+      return !!s.battle && (s.battle.attacker.uid === self || s.battle.defender.uid === self);
+    case "leader_character_contains":
+      // « Si votre Leader inclut <GT> dans son nom de personnage ».
+      return leader?.character.some((ch) => ch.includes(c["value"] as string)) ?? false;
+    case "all_energy_sources_color": {
+      // « Si toutes vos sources d'énergie sont vertes » : Énergies et Énergies Z.
+      const color = c["value"] as string;
+      return [...me.energy, ...me.zEnergy].every((e) => db.get(e.cardId)?.colors.includes(color as never) ?? false);
+    }
+    case "link": {
+      // 22-21 [Lien X] : X cartes de Combat (ou de la carte indiquée) ou plus dans votre Zone de Combat.
+      const cards = me.battle.filter((b) => db.get(b.cardId)?.type === "battle" || db.get(b.cardId)?.type === "z_battle");
+      return cards.filter((b) => matchesFilter(b, c["filter"], db, s) === true).length >= num("value");
+    }
+    case "spark":
+      // 22-26 [Étincelle X] : X cartes ou plus dans votre Dispersion.
+      return me.drop.length >= num("value");
     default:
       return null;
   }
+}
+
+/**
+ * Conditions portées par une Capacité : sa liste `condition`, et les mots-clés [Lien X]
+ * (`link`, `link_filter`) et [Étincelle X] (`spark`).
+ */
+export function abilityConditions(ability: Json): unknown {
+  const list = Array.isArray(ability["condition"]) ? [...(ability["condition"] as Json[])] : [];
+  if (typeof ability["link"] === "number") list.push({ check: "link", value: ability["link"], filter: ability["link_filter"] });
+  if (typeof ability["spark"] === "number") list.push({ check: "spark", value: ability["spark"] });
+  return list;
 }
 
 /** Vérifie toutes les conditions. Renvoie true / false, ou le nom de la première condition non gérée. */
@@ -144,6 +183,24 @@ export function traitsOf(def: CardDefinition | undefined): string[] {
 
 const sameColors = (a: readonly string[], b: readonly string[]) => a.length === b.length && a.every((c) => b.includes(c));
 
+/** Coût de couleur d'une carte : nombre total de ses orbes (1-2-3). */
+export const colorCostOf = (def: CardDefinition | undefined): number =>
+  Object.values(def?.cost?.specified ?? {}).reduce((a, b) => a + (b ?? 0), 0);
+
+/**
+ * Une carte correspond-elle à une description `{ filter }` ou `{ filter_any: [...] }` (« ... ou ... ») ?
+ * Renvoie null si un critère n'est pas géré.
+ */
+export function matchesSpec(card: CardInstance, spec: Json, db: CardDatabase, s?: GameState): boolean | null {
+  const any = spec["filter_any"];
+  if (Array.isArray(any)) {
+    const results = any.map((f) => matchesFilter(card, f, db, s));
+    if (results.some((r) => r === true)) return matchesFilter(card, spec["filter"], db, s);
+    return results.some((r) => r === null) ? null : false;
+  }
+  return matchesFilter(card, spec["filter"], db, s);
+}
+
 /**
  * Une carte correspond-elle au filtre ? Renvoie null si un critère n'est pas géré.
  * Avec `s`, les coûts comparés sont les coûts actuels (augmentations comprises).
@@ -193,6 +250,26 @@ export function matchesFilter(card: CardInstance, filter: unknown, db: CardDatab
         break;
       case "colors_any":
         if (!(value as string[]).some((c) => def?.colors.includes(c as never))) return false;
+        break;
+      case "color_cost":
+        if (colorCostOf(def) !== value) return false;
+        break;
+      case "name":
+        if (def?.name !== value) return false;
+        break;
+      case "character_contains":
+        if (!def?.character.some((ch) => ch.includes(value as string))) return false;
+        break;
+      case "character_only":
+        // « une carte exclusivement <X> » : ce seul nom de personnage.
+        if (def?.character.length !== 1 || def.character[0] !== value) return false;
+        break;
+      case "not_keyword":
+        if (def?.keywords.some((k) => k.id === value)) return false;
+        break;
+      case "token_name":
+        // « vos jetons Terrien » : aucun jeton de ce nom n'est créé par les cartes connues.
+        if (!def?.token || def.name !== `Jeton ${value as string}`) return false;
         break;
       default:
         return null;
