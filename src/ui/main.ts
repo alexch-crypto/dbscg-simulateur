@@ -51,6 +51,7 @@ import { applyTheme, loadPrefs, savePrefs } from "./prefs";
 import { imageUrl, loadImages, setImagesEnabled } from "./images";
 import { runEffects, setFxSettings, snapshotRects } from "./fx";
 import { setAudioSettings, startMusic, stopMusic } from "./audio";
+import { myPlaymat, validPlaymat } from "./playmat";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -211,6 +212,7 @@ function createRoom(deck: SavedDeck, prompt: CounterPrompt): void {
     },
   );
   onlineHost.names.P1 = prefs.pseudo;
+  onlineHost.playmats.P1 = myPlaymat() ?? "";
   hostLink = hostRoom({
     onReady: (code) => {
       roomCode = code;
@@ -264,7 +266,7 @@ void loadImages().then(() => render());
   guestLink = joinRoom(clean, {
     onConnected: () => {
       netStatus = "";
-      onlineGuest?.hello(deck.list, prompt, prefs.pseudo);
+      onlineGuest?.hello(deck.list, prompt, prefs.pseudo, myPlaymat() ?? "");
       render();
     },
     onClosed: () => {
@@ -731,70 +733,77 @@ function artStyle(cardId: string, back = false): string {
   return url ? ` style="background-image: linear-gradient(transparent 35%, rgba(0,0,0,.8)), url('${url}')"` : "";
 }
 
-/** Une zone sur UNE ligne : si elle déborde, elle défile horizontalement. */
-function zone(title: string, cards: readonly CardView[], info: RenderInfo, slotPrefix?: string, extraClass = ""): string {
-  const content =
-    cards.length > 0
-      ? cards.map((c, i) => cardBox(c, info, slotPrefix ? `${slotPrefix}:${i}` : undefined)).join("")
-      : `<span class="empty">—</span>`;
-  return `<div class="zone ${extraClass}"><div class="zone-title">${title} (${cards.length})</div><div class="cards strip">${content}</div></div>`;
+/** Tapis d'un joueur : son image en ligne (vérifiée), sinon le mien, sinon le tapis par défaut. */
+function playmatOf(p: PlayerId): string | null {
+  const online = (onlineHost ?? onlineGuest)?.playmats[p];
+  if (onlineHost || onlineGuest) return validPlaymat(online) ? online : null;
+  return myPlaymat();
 }
 
-function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string {
-  const deciding = state?.pending?.player === p.id;
-  const head = `<div class="pl-head">
-      <b>${playerLabel(p.id)}</b>${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}
-      <span class="counter">Deck <b>${p.deckCount}</b></span>
-      <span class="counter">Main <b>${p.hand.length}</b></span>
-      <span class="counter">Marqueurs <b>${p.energyMarkers}</b></span>
-    </div>`;
-  const field = `<div class="pl-row">
-      <div class="zone"><div class="zone-title">Leader</div><div class="cards">${leaderBox(p.leader, info)}</div></div>
-      ${zone("Vie", p.life, info, `life:${p.id}`, "life")}
-      ${zone("Énergie", p.energy, info, undefined, "grow")}
-      ${zone("Unisson", p.unison, info)}
-      ${p.combo.length > 0 ? zone("Combo", p.combo, info) : ""}
-      ${zone("Énergie Z", p.zEnergy, info)}
-    </div>`;
-  const battle = `<div class="pl-row">${zone("Zone de Combat", p.battle, info, undefined, "grow")}</div>`;
-  const hand = `<div class="pl-row">${zone("Main", p.hand, info, `hand:${p.id}`, "grow")}${piles(p, info)}${zPile(p, info)}</div>`;
-  // Disposition comme sur une table : la main au bord, la Zone de Combat vers le centre.
-  const rows = top ? [head, hand, field, battle] : [head, battle, field, hand];
-  return `<section class="player ${deciding ? "deciding" : ""}">${rows.join("")}</section>`;
-}
+/** Une zone du tapis : son nom en filigrane et ses cartes. */
+const matZone = (area: string, label: string, content: string, extra = ""): string =>
+  `<div class="mz mz-${area} ${extra}"><span class="mz-label">${label}</span><div class="mz-cards">${content}</div></div>`;
 
-/** Deck Z : une pile d'une seule carte face cachée ; un clic l'ouvre dans le panneau de droite. */
-function zPile(p: PlayerZonesView, info: RenderInfo): string {
-  const hasAction = p.zDeck.some((c) => isVisible(c) && info.actionable.has(c.uid));
-  const classes = ["card", "mini", "zpile", hasAction ? "actionable" : "", openZDeck === p.id ? "selected" : ""];
-  return `<div class="zone"><div class="zone-title">Deck Z</div><div class="cards">
-    <div class="${classes.join(" ")}" data-zpile="${p.id}" title="Cliquer pour ouvrir / fermer le deck Z">
-      <div class="mini-name">Deck Z</div><div class="mini-power">${p.zDeck.length} carte(s)</div>
-      <div class="mini-combo">${openZDeck === p.id ? "fermer" : "ouvrir"}</div>
-    </div></div></div>`;
+/** Pile (deck, Dispersion...) : la carte du dessus (ou un dos) avec le nombre de cartes. */
+function pile(label: string, count: number, top: CardView | undefined, attrs: string, classes: string[]): string {
+  const art = top && isVisible(top) ? artStyle(top.cardId) : "";
+  const face =
+    top && isVisible(top)
+      ? `<div class="pile-top${art ? " has-img" : ""}"${art}><span class="pile-name">${esc(cardName(db, top.cardId))}</span></div>`
+      : count > 0
+        ? `<div class="pile-top card-back"></div>`
+        : "";
+  return `<div class="pile ${count > 1 ? "stacked" : ""} ${classes.join(" ")}" ${attrs} title="${esc(label)} : ${count} carte(s)">${face}<span class="pile-count">${count}</span></div>`;
 }
 
 /**
- * Piles publiques (Dispersion, Dimension parallèle, cartes retirées de la partie) : un clic les
- * ouvre dans le panneau de droite. Surlignées quand une de leurs cartes peut agir (ex. Zarbon,
- * Élite cosmique) ou doit être choisie. La pile des cartes retirées n'apparaît que si elle existe.
+ * Tapis d'un joueur, disposé comme le schéma officiel du manuel (zones de jeu, 3) : en haut
+ * Énergie Z, Deck Z, Leader, Unisson, Zone de Combat, Dimension parallèle ; à gauche la Vie ; au
+ * milieu la Zone de Combo ; en bas l'Énergie (avec les marqueurs Énergie) ; à droite le deck et
+ * la Dispersion. Le tapis adverse est vu depuis l'autre côté de la table (zones inversées).
  */
-function piles(p: PlayerZonesView, info: RenderInfo): string {
-  return (["drop", "warp", "removed"] as const)
-    .filter((zone) => zone !== "removed" || p.removed.length > 0)
-    .map((zone) => {
-      const cards = p[zone];
-      const busy = cards.some((c) => info.actionable.has(c.uid) || info.pickable.has(c.uid));
-      const open = openPile === `${p.id}:${zone}`;
-      const top = cards[cards.length - 1];
-      const classes = ["card", "mini", "zpile", "droppile", busy ? "actionable" : "", open ? "selected" : ""];
-      return `<div class="zone"><div class="zone-title">${PILE_NAMES[zone]}</div><div class="cards">
-    <div class="${classes.join(" ")}" data-pile="${p.id}:${zone}" title="Cliquer pour ouvrir / fermer : ${PILE_NAMES[zone]}">
-      <div class="mini-name">${top ? esc(cardName(db, top.cardId)) : PILE_NAMES[zone]}</div><div class="mini-power">${cards.length} carte(s)</div>
-      <div class="mini-combo">${open ? "fermer" : "ouvrir"}</div>
-    </div></div></div>`;
-    })
-    .join("");
+function playerArea(p: PlayerZonesView, info: RenderInfo, top: boolean): string {
+  const deciding = state?.pending?.player === p.id || (!state && info.view.pending?.player === p.id);
+  const cards = (list: readonly CardView[], prefix?: string) => list.map((c, i) => cardBox(c, info, prefix ? `${prefix}:${i}` : undefined)).join("");
+  const markers = Array.from({ length: p.energyMarkers }, () => `<span class="emarker" title="Marqueur Énergie (paie un orbe, puis disparaît)">⚡</span>`).join("");
+  const zHasAction = p.zDeck.some((c) => isVisible(c) && info.actionable.has(c.uid));
+  const pileClasses = (zone: PileZone) => {
+    const list = p[zone];
+    const busy = list.some((c) => info.actionable.has(c.uid) || info.pickable.has(c.uid));
+    return [busy ? "actionable" : "", openPile === `${p.id}:${zone}` ? "selected" : ""];
+  };
+  const zones = [
+    matZone("zen", "Énergie Z", cards(p.zEnergy)),
+    matZone("zdk", "Deck Z", pile("Deck Z", p.zDeck.length, undefined, `data-zpile="${p.id}"`, [zHasAction ? "actionable" : "", openZDeck === p.id ? "selected" : ""])),
+    matZone("led", "Leader", leaderBox(p.leader, info)),
+    matZone("uni", "Unisson", cards(p.unison)),
+    matZone("bat", "Zone de Combat", cards(p.battle)),
+    matZone(
+      "wrp",
+      "Dim. parallèle",
+      pile("Dimension parallèle", p.warp.length, p.warp[p.warp.length - 1], `data-pile="${p.id}:warp"`, pileClasses("warp")) +
+        (p.removed.length
+          ? pile("Retirées de la partie", p.removed.length, p.removed[p.removed.length - 1], `data-pile="${p.id}:removed"`, pileClasses("removed"))
+          : ""),
+    ),
+    matZone("lif", `Vie · ${p.life.length}`, cards(p.life, `life:${p.id}`)),
+    matZone("cmb", "Zone de Combo", cards(p.combo)),
+    matZone("dck", "Deck", pile("Deck", p.deckCount, undefined, "", [])),
+    matZone("ene", `Énergie · ${p.energy.length}`, cards(p.energy) + (markers ? `<span class="emarkers">${markers}</span>` : "")),
+    matZone("drp", "Dispersion", pile("Dispersion", p.drop.length, p.drop[p.drop.length - 1], `data-pile="${p.id}:drop"`, pileClasses("drop"))),
+  ].join("");
+  const mat = playmatOf(p.id);
+  const head = `<div class="mat-head"><b>${playerLabel(p.id)}</b>${deciding ? ` <span class="turn-badge">à vous de jouer</span>` : ""}
+    <span class="counter">Main <b>${p.hand.length}</b></span></div>`;
+  // La main : en éventail devant son tapis, ou une rangée au-dessus du tapis d'en face.
+  const n = p.hand.length;
+  const hand = `<div class="hand ${top ? "hand-top" : "hand-fan"}">${p.hand
+    .map((c, i) => `<div class="hand-slot" style="--o:${(i - (n - 1) / 2).toFixed(2)}">${cardBox(c, info, `hand:${p.id}:${i}`)}</div>`)
+    .join("")}</div>`;
+  const section = `<section class="mat ${top ? "mat-top" : "mat-bottom"} ${deciding ? "deciding" : ""} ${mat ? "" : "mat-default"}"${
+    mat ? ` style="background-image: url('${mat}')"` : ""
+  }>${head}<div class="mat-grid">${zones}</div></section>`;
+  return top ? `<div class="side">${hand}${section}</div>` : `<div class="side">${section}${hand}</div>`;
 }
 
 /** Contenu de la pile ouverte. La Dispersion s'ouvre d'elle-même s'il faut y choisir une carte. */
@@ -1053,10 +1062,11 @@ function render(): void {
     <main>
       <div class="board">
         ${promptBar(view, info)}
-        ${playerArea(view.players[top], info, true)}
-        ${battleSummary(view)}
-        ${counterSummary(view)}
-        ${playerArea(view.players[bottom], info, false)}
+        <div class="table">
+          ${playerArea(view.players[top], info, true)}
+          <div class="table-middle">${battleSummary(view)}${counterSummary(view)}</div>
+          ${playerArea(view.players[bottom], info, false)}
+        </div>
       </div>
       <aside>
         <div class="actions">${zDeckPanel(view, info)}${pilePanel(view, info)}${cardDetail(view)}${actionsPanel(view, info)}</div>

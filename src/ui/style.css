@@ -357,3 +357,107 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .fx-banner.fx-awaken { background: linear-gradient(90deg, #b45309dd, #f59e0bdd); }
 .fx-banner.fx-end { font-size: 34px; background: linear-gradient(90deg, #166534dd, #22c55edd); animation-duration: 2.5s; }
 @media (prefers-reduced-motion: reduce) { .fx-banner, .fx-float, .fx-arrow { display: none; } }
+
+:root { --dragonball: url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2235%25%22%20cy%3D%2230%25%22%20r%3D%2270%25%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23fff6c2%22%2F%3E%3Cstop%20offset%3D%22.25%22%20stop-color%3D%22%23ffc23a%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23e06a00%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2246%22%20fill%3D%22url(%23g)%22%20stroke%3D%22%23b34d00%22%20stroke-width%3D%222%22%2F%3E%3Cg%20fill%3D%22%23d81e1e%22%3E%3Cpath%20d%3D%22M38%2030l2.9%206%206.6.9-4.8%204.6%201.2%206.5L38%2045l-5.9%203%201.2-6.5-4.8-4.6%206.6-.9z%22%2F%3E%3Cpath%20d%3D%22M62%2030l2.9%206%206.6.9-4.8%204.6%201.2%206.5L62%2045l-5.9%203%201.2-6.5-4.8-4.6%206.6-.9z%22%2F%3E%3Cpath%20d%3D%22M50%2052l2.9%206%206.6.9-4.8%204.6%201.2%206.5L50%2067l-5.9%203%201.2-6.5-4.8-4.6%206.6-.9z%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%2236%22%20cy%3D%2226%22%20rx%3D%2210%22%20ry%3D%225%22%20fill%3D%22%23ffffff88%22%20transform%3D%22rotate(-25%2036%2026)%22%2F%3E%3C%2Fsvg%3E"); }
+/* ================================================================ Table de jeu (étape 2) */
+/* Table en bois (dessinée en CSS : veines + dégradé). */
+#app:has(> main .table) { background-color: #5b3a1e; background-image:
+  repeating-linear-gradient(92deg, rgba(255,255,255,.035) 0 2px, transparent 2px 11px),
+  repeating-linear-gradient(88deg, rgba(0,0,0,.10) 0 1px, transparent 1px 37px),
+  repeating-linear-gradient(90deg, rgba(0,0,0,.06) 0 3px, transparent 3px 140px),
+  linear-gradient(180deg, #6e4624 0%, #573519 50%, #6a4322 100%); }
+#app:has(> main .table) > main { background: transparent; }
+#app:has(> main .table) header { background: #2b1a0ccc; border-bottom-color: #00000066; color: #f3e9dc; }
+.board { padding: 0 4px; }
+.table { --cw: 54px; --ch: 75px; display: flex; flex-direction: column; gap: 6px; }
+.table-middle:empty { display: none; }
+.table-middle .battle { margin: 0; background: #2b1a0cdd; color: #f3e9dc; border-color: #f5a62388; }
+.side { display: flex; flex-direction: column; gap: 4px; }
+
+/* Tapis : image du joueur, ou tapis par défaut orange avec une Dragon Ball (dessinée en SVG). */
+.mat { position: relative; border-radius: 14px; padding: 22px 8px 8px; background-size: cover; background-position: center;
+  box-shadow: 0 6px 18px #0009, inset 0 0 0 2px #0004; }
+.mat-default { background-color: #e8771b; background-image: var(--dragonball), radial-gradient(ellipse at center, #f7a03a 0%, #e8771b 55%, #b9520c 100%);
+  background-size: 120px 120px, cover; background-repeat: no-repeat; background-position: center, center; }
+.mat.deciding { box-shadow: 0 6px 18px #0009, 0 0 0 3px var(--orange); }
+.mat-head { position: absolute; left: 10px; top: 3px; display: flex; gap: 8px; align-items: center; font-size: 12px; color: #fff; text-shadow: 0 1px 2px #000; }
+.mat-head .counter { color: #fff; opacity: .85; }
+
+/* Zones du tapis, placées comme le schéma officiel ; le tapis d'en face est vu depuis l'autre côté. */
+.mat-grid { display: grid; gap: 6px;
+  grid-template-columns: minmax(70px, .9fr) minmax(64px, .7fr) minmax(70px, .8fr) minmax(70px, .8fr) minmax(200px, 4fr) minmax(70px, .9fr);
+  grid-template-rows: auto auto auto;
+  grid-template-areas: "zen zdk led uni bat wrp" "lif cmb cmb cmb cmb dck" "lif ene ene ene ene drp"; }
+.mat-top .mat-grid { grid-template-areas: "lif ene ene ene ene drp" "lif cmb cmb cmb cmb dck" "zen zdk led uni bat wrp"; }
+.mz { position: relative; min-width: 0; min-height: calc(var(--ch) + 14px); border-radius: 9px; background: rgba(0,0,0,.30);
+  border: 1px dashed rgba(255,255,255,.28); padding: 12px 5px 4px; }
+.mz-label { position: absolute; left: 7px; top: 1px; font-size: 9px; letter-spacing: .5px; text-transform: uppercase; color: rgba(255,255,255,.75); pointer-events: none; }
+.mz-cards { display: flex; gap: 5px; align-items: center; min-height: var(--ch); overflow-x: auto; overflow-y: hidden; padding: 2px; }
+.mz-zen { grid-area: zen; } .mz-zdk { grid-area: zdk; } .mz-led { grid-area: led; } .mz-uni { grid-area: uni; }
+.mz-bat { grid-area: bat; } .mz-wrp { grid-area: wrp; } .mz-lif { grid-area: lif; } .mz-cmb { grid-area: cmb; }
+.mz-dck { grid-area: dck; } .mz-ene { grid-area: ene; } .mz-drp { grid-area: drp; }
+.mz-cmb { min-height: 46px; } .mz-cmb .mz-cards { min-height: 30px; }
+.mz-cmb:not(:has(.card)) { background: rgba(0,0,0,.15); }
+.mz-led .mz-cards, .mz-zdk .mz-cards, .mz-dck .mz-cards, .mz-drp .mz-cards, .mz-wrp .mz-cards { justify-content: center; }
+/* La Vie : dos de cartes qui se chevauchent. */
+.mz-lif .mz-cards { flex-wrap: wrap; align-content: flex-start; gap: 0; }
+.mz-lif .card.mini.hidden-card { width: calc(var(--cw) * .62); min-width: calc(var(--cw) * .62); height: calc(var(--ch) * .62); margin: 0 -6px -18px 0; }
+
+/* Cartes au format carte (63 × 88). En mode Inertie, couchées à 90°. */
+.table .card.mini { width: var(--cw); min-width: var(--cw); height: var(--ch); padding: 3px; font-size: 9px; border-radius: 5px; box-shadow: 0 2px 4px #0007; }
+.table .card.mini.leader { width: calc(var(--cw) * 1.12); min-width: calc(var(--cw) * 1.12); height: calc(var(--ch) * 1.12); }
+.table .card.mini.rest { transform: rotate(90deg); margin: 0 calc((var(--ch) - var(--cw)) / 2); }
+.table .card.mini.leader.rest { margin: 0 calc((var(--ch) - var(--cw)) / 2 * 1.12); }
+.table .card.mini.rest[data-slot]:hover { transform: rotate(90deg) translateY(2px); }
+.table .card.mini.has-img { background-position: center 20%; }
+.table .mini-name { -webkit-line-clamp: 3; font-size: 9px; }
+.card.mini.hidden-card, .card-back { background: repeating-linear-gradient(45deg, #1e2a5a 0 4px, #24336d 4px 8px); border: 2px solid #c9a227; color: transparent; }
+@keyframes fx-to-rest { from { transform: rotate(0); } to { transform: rotate(90deg); } }
+@keyframes fx-to-active { from { transform: rotate(90deg); } to { transform: rotate(0); } }
+@keyframes fx-enter-rest { from { transform: scale(0.4) translateY(-30px); opacity: 0; } to { transform: rotate(90deg); } }
+
+/* Marqueurs Énergie : des jetons posés à côté des Énergies. */
+.emarkers { display: flex; gap: 3px; margin-left: 6px; }
+.emarker { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px;
+  background: radial-gradient(circle at 35% 30%, #fff3b0, #f5b301 60%, #a86f00); border: 2px solid #fff8; box-shadow: 0 2px 4px #0008; }
+
+/* Piles : carte du dessus (ou un dos), avec une épaisseur et le nombre de cartes. */
+.pile { position: relative; width: var(--cw); height: var(--ch); cursor: default; }
+.pile[data-pile], .pile[data-zpile] { cursor: pointer; }
+.pile > .pile-top { position: absolute; inset: 0; border-radius: 5px; overflow: hidden; background-color: var(--card); background-size: cover; background-position: center 20%;
+  border: 1px solid #0006; display: flex; align-items: flex-end; padding: 3px; box-shadow: 0 2px 4px #0007; }
+.pile.stacked > .pile-top { box-shadow: 2px 2px 0 #ddd, 4px 4px 0 #bbb, 5px 6px 6px #0008; }
+.pile:not(:has(.pile-top)) { border: 1px dashed rgba(255,255,255,.35); border-radius: 5px; }
+.pile-name { font-size: 8px; font-weight: 600; line-height: 1.1; color: var(--text); }
+.pile-top.has-img .pile-name { color: #fff; text-shadow: 0 1px 2px #000; }
+.pile-count { position: absolute; right: -6px; bottom: -6px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #111d; color: #fff;
+  font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 1px solid #fff6; }
+.pile.actionable > .pile-top { outline: 2px solid var(--orange); }
+.pile.selected > .pile-top { outline: 3px solid var(--accent); }
+
+/* Main : en éventail devant son tapis ; rangée au-dessus du tapis d'en face. */
+.hand { display: flex; justify-content: center; min-height: 20px; }
+.hand-fan { --hw: 64px; --hh: 89px; padding: 6px 0 2px; margin-top: -6px; }
+.hand-fan .hand-slot { margin: 0 -7px; transform: rotate(calc(var(--o) * 3deg)) translateY(calc(var(--o) * var(--o) * 1.2px)); transform-origin: 50% 120%; transition: transform .15s; }
+.hand-fan .hand-slot:hover { transform: translateY(-14px) scale(1.12); z-index: 5; }
+.hand-fan .card.mini { width: var(--hw); min-width: var(--hw); height: var(--hh); font-size: 10px; }
+.hand-top { gap: 3px; flex-wrap: nowrap; overflow-x: auto; }
+.hand-top .card.mini { width: calc(var(--cw) * .8); min-width: calc(var(--cw) * .8); height: calc(var(--ch) * .8); }
+.hand-top .card.mini.hidden-card { width: calc(var(--cw) * .6); min-width: calc(var(--cw) * .6); height: calc(var(--ch) * .6); }
+
+/* Réglage de hauteur : tout le plateau tient sur un écran de portable (768 px de haut). */
+.table { --cw: 48px; --ch: 67px; gap: 4px; }
+.mat { padding: 18px 6px 6px; }
+.mat-grid { gap: 4px; }
+.mz { padding: 11px 4px 3px; min-height: calc(var(--ch) + 12px); }
+.mz-cmb, .mz-dck { --cw: 38px; --ch: 53px; }
+.hand-fan { --hw: 58px; --hh: 81px; }
+.hand-top .card.mini { width: calc(var(--cw) * .75); min-width: calc(var(--cw) * .75); height: calc(var(--ch) * .75); }
+.mz-cmb, .mz-dck { --cw: 32px; --ch: 45px; min-height: 0; }
+.hand-top .card.mini { width: calc(var(--cw) * .66); min-width: calc(var(--cw) * .66); height: calc(var(--ch) * .66); font-size: 7px; }
+.hand-top .card.mini .mini-name { -webkit-line-clamp: 2; font-size: 7px; }
+.hand-fan { margin-top: -10px; padding-top: 0; }
+.hand-fan .hand-slot { transform: rotate(calc(var(--o) * 1.6deg)) translateY(calc(var(--o) * var(--o) * .35px)); }
+
+.playmat-preview { width: 320px; max-width: 100%; aspect-ratio: 16 / 7; border-radius: 12px; background-size: cover; background-position: center; box-shadow: 0 4px 12px #0006; margin: 6px 0; }
+.playmat-preview.mat-default { background-size: 70px 70px, cover; }

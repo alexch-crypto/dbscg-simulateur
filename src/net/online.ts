@@ -22,19 +22,21 @@ import {
   type PlayerView,
 } from "../engine";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const HOST: PlayerId = "P1";
 export const GUEST: PlayerId = "P2";
 
 /** Messages de l'invité vers l'hôte. */
 export type GuestMessage =
-  | { t: "hello"; version: number; deck: DeckList; counterPrompt: CounterPrompt; name?: string }
+  | { t: "hello"; version: number; deck: DeckList; counterPrompt: CounterPrompt; name?: string; playmat?: string }
   | { t: "action"; action: Action };
 
 /** Messages de l'hôte vers l'invité. */
 export type HostMessage =
   | { t: "update"; you: PlayerId; view: PlayerView; actions: Action[]; events: GameEvent[]; names?: Record<PlayerId, string> }
-  | { t: "error"; message: string };
+  | { t: "error"; message: string }
+  /** Tapis de jeu de l'hôte (image), envoyé une fois à la connexion. */
+  | { t: "playmat"; data: string };
 
 /** Ce dont l'interface a besoin pour afficher la partie d'un joueur. */
 export interface Snapshot {
@@ -48,6 +50,8 @@ export class OnlineHost {
   record: GameRecord | null = null;
   /** Pseudos des joueurs (vide = pas de pseudo). */
   names: Record<PlayerId, string> = { P1: "", P2: "" };
+  /** Tapis de jeu (image « data: »), vide = tapis par défaut. L'interface vérifie l'image. */
+  playmats: Record<PlayerId, string> = { P1: "", P2: "" };
 
   constructor(
     private readonly ctx: GameContext,
@@ -77,6 +81,9 @@ export class OnlineHost {
     if (!msg || typeof msg !== "object") return;
     if (msg.t === "hello") {
       if (typeof msg.name === "string") this.names[GUEST] = msg.name.slice(0, 20);
+      if (typeof msg.playmat === "string") this.playmats[GUEST] = msg.playmat;
+      // Le tapis de l'hôte est envoyé à chaque (re)connexion de l'invité.
+      if (this.playmats[HOST]) this.send({ t: "playmat", data: this.playmats[HOST] });
       if (msg.version !== PROTOCOL_VERSION) {
         this.send({ t: "error", message: "version du simulateur différente : rechargez la page des deux côtés" });
         return;
@@ -134,14 +141,16 @@ export class OnlineGuest {
   you: PlayerId = GUEST;
   lastError = "";
   names: Record<PlayerId, string> = { P1: "", P2: "" };
+  playmats: Record<PlayerId, string> = { P1: "", P2: "" };
 
   constructor(
     private readonly send: (msg: GuestMessage) => void,
     private readonly onChange: (events: GameEvent[]) => void,
   ) {}
 
-  hello(deck: DeckList, counterPrompt: CounterPrompt, name = ""): void {
-    this.send({ t: "hello", version: PROTOCOL_VERSION, deck, counterPrompt, ...(name ? { name } : {}) });
+  hello(deck: DeckList, counterPrompt: CounterPrompt, name = "", playmat = ""): void {
+    this.playmats[GUEST] = playmat;
+    this.send({ t: "hello", version: PROTOCOL_VERSION, deck, counterPrompt, ...(name ? { name } : {}), ...(playmat ? { playmat } : {}) });
   }
 
   act(action: Action): void {
@@ -158,6 +167,9 @@ export class OnlineGuest {
       if (msg.names) this.names = { ...msg.names };
       this.lastError = "";
       this.onChange(msg.events);
+    } else if (msg.t === "playmat") {
+      if (typeof msg.data === "string") this.playmats[HOST] = msg.data;
+      this.onChange([]);
     } else if (msg.t === "error") {
       this.lastError = msg.message;
       this.onChange([]);

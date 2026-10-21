@@ -10,6 +10,7 @@ import { applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
 import { clearImages, imageCount, imageUrl, importImages, setImagesEnabled } from "./images";
 import { setFxSettings } from "./fx";
 import { playSound, setAudioSettings } from "./audio";
+import { importPlaymat, myPlaymat, resetPlaymat } from "./playmat";
 
 export type Screen = "home" | "play" | "decks" | "deck-edit" | "cards" | "settings";
 export type Mode = "solo" | "hotseat" | "online";
@@ -405,6 +406,13 @@ function settings(host: MenuHost): string {
       <label class="check"><input type="checkbox" data-pref-music ${p.music ? "checked" : ""}> Musique de combat pendant la partie</label>
       <label class="field"><span>Volume de la musique</span><input type="range" min="0" max="1" step="0.05" value="${p.musicVolume}" data-pref-music-volume></label>
       <label class="check"><input type="checkbox" data-pref-anim ${p.animations ? "checked" : ""}> Animations (cartes jouées, flèches d'attaque, dégâts...)</label>
+      <h2>Tapis de jeu</h2>
+      <p class="hint">Sans image, le tapis orange avec une Dragon Ball est utilisé. En ligne, votre adversaire voit votre tapis (l'image est réduite avant l'envoi) et vous voyez le sien.</p>
+      <div class="playmat-preview ${myPlaymat() ? "" : "mat-default"}"${myPlaymat() ? ` style="background-image: url('${myPlaymat()}')"` : ""}></div>
+      <div class="toolbar">
+        <label class="file-button">Choisir une image de tapis<input type="file" accept="image/*" data-playmat-import hidden></label>
+        ${myPlaymat() ? `<button data-playmat-reset>Revenir au tapis par défaut</button>` : ""}
+      </div>
       <h2>Images des cartes</h2>
       <p class="hint">Les images restent uniquement dans ce navigateur : elles ne sont jamais envoyées ni publiées.
         Choisissez les fichiers du dossier <b>images-cartes</b> (nommés par numéro de carte, ex. BT24-056.jpg).</p>
@@ -616,6 +624,11 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
     setTimeout(() => playSound("hit"), 1800);
     return true;
   }
+  if (d["playmatReset"] !== undefined) {
+    resetPlaymat();
+    host.render();
+    return true;
+  }
   if (d["imagesClear"] !== undefined) {
     if (window.confirm("Effacer toutes les images de cartes de ce navigateur ?")) {
       void clearImages().then(() => {
@@ -710,6 +723,12 @@ export function menuInput(el: HTMLInputElement, host: MenuHost, final: boolean):
     prefs.showImages = el.checked;
     setImagesEnabled(el.checked);
     savePrefs(prefs);
+  } else if (d["playmatImport"] !== undefined && el.files?.[0]) {
+    void importPlaymat(el.files[0]).then((error) => {
+      ui.message = error ? `Tapis : ${error}` : "Tapis importé.";
+      host.render();
+    });
+    return true;
   } else if (d["imagesImport"] !== undefined && el.files && el.files.length > 0) {
     void importImages(el.files).then((n) => {
       ui.message = `${n} image(s) importée(s).`;
