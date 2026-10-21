@@ -1,135 +1,21 @@
 // Sons et animations de la partie, déclenchés par les événements du moteur.
 //
-// Les sons sont SYNTHÉTISÉS par le navigateur (Web Audio) : aucun fichier sonore, rien à
-// télécharger, aucun problème de droits. Les animations sont des classes CSS posées sur les
-// cartes juste après l'affichage (la page est redessinée à chaque coup).
+// Les sons viennent de audio.ts (synthétisés, sans fichier). Les animations sont des classes CSS
+// posées sur les cartes juste après l'affichage (la page est redessinée à chaque coup).
 //
 // Aucune règle du jeu ici : uniquement de l'affichage.
 
 import type { GameEvent, PlayerId } from "../engine";
+import { playSound, type SoundName } from "./audio";
 
 export interface FxSettings {
-  sound: boolean;
-  /** Volume de 0 à 1. */
-  volume: number;
   animations: boolean;
 }
 
-let settings: FxSettings = { sound: true, volume: 0.5, animations: true };
+let settings: FxSettings = { animations: true };
 export const setFxSettings = (s: FxSettings): void => {
   settings = s;
 };
-
-// ---------------------------------------------------------------------------
-// Sons
-// ---------------------------------------------------------------------------
-
-let audio: AudioContext | null = null;
-
-function ctx(): AudioContext | null {
-  if (!settings.sound || settings.volume <= 0) return null;
-  try {
-    audio ??= new AudioContext();
-    if (audio.state === "suspended") void audio.resume();
-    return audio;
-  } catch {
-    return null;
-  }
-}
-
-/** Note simple (oscillateur) avec une enveloppe courte. */
-function tone(freq: number, start: number, duration: number, type: OscillatorType = "sine", gain = 0.25, slideTo?: number): void {
-  const a = ctx();
-  if (!a) return;
-  const t = a.currentTime + start;
-  const osc = a.createOscillator();
-  const g = a.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + duration);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain * settings.volume, t + 0.01);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  osc.connect(g).connect(a.destination);
-  osc.start(t);
-  osc.stop(t + duration + 0.02);
-}
-
-/** Bruit filtré (souffle, impact). */
-function noise(start: number, duration: number, freq: number, gain = 0.3, q = 1, slideTo?: number): void {
-  const a = ctx();
-  if (!a) return;
-  const t = a.currentTime + start;
-  const buffer = a.createBuffer(1, Math.ceil(a.sampleRate * duration), a.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-  const src = a.createBufferSource();
-  src.buffer = buffer;
-  const filter = a.createBiquadFilter();
-  filter.type = "bandpass";
-  filter.frequency.setValueAtTime(freq, t);
-  if (slideTo) filter.frequency.exponentialRampToValueAtTime(slideTo, t + duration);
-  filter.Q.value = q;
-  const g = a.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(gain * settings.volume, t + 0.015);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  src.connect(filter).connect(g).connect(a.destination);
-  src.start(t);
-}
-
-const SOUNDS = {
-  /** Carte posée sur la table. */
-  play: () => {
-    noise(0, 0.12, 1800, 0.25, 0.8, 600);
-    tone(220, 0.02, 0.12, "triangle", 0.12, 160);
-  },
-  /** Énergie placée. */
-  charge: () => {
-    tone(660, 0, 0.12, "sine", 0.12);
-    tone(990, 0.06, 0.16, "sine", 0.1);
-  },
-  draw: () => noise(0, 0.09, 3500, 0.12, 1.2, 2000),
-  /** Attaque : souffle qui monte. */
-  attack: () => {
-    noise(0, 0.35, 400, 0.35, 0.7, 3000);
-    tone(140, 0.05, 0.3, "sawtooth", 0.08, 320);
-  },
-  /** Coup reçu (dégâts). */
-  hit: () => {
-    tone(120, 0, 0.35, "sine", 0.5, 45);
-    noise(0, 0.18, 900, 0.35, 0.6, 200);
-  },
-  /** Carte mise KO. */
-  ko: () => {
-    noise(0, 0.4, 1200, 0.3, 0.5, 120);
-    tone(300, 0, 0.4, "square", 0.06, 60);
-  },
-  /** Contre : son métallique. */
-  counter: () => {
-    tone(1200, 0, 0.25, "triangle", 0.15, 900);
-    tone(1800, 0.03, 0.3, "sine", 0.1);
-  },
-  combo: () => {
-    tone(440, 0, 0.1, "square", 0.06);
-    tone(660, 0.07, 0.14, "square", 0.06);
-  },
-  power: () => tone(520, 0, 0.18, "sine", 0.12, 880),
-  /** Éveil / Éveil Z : petite fanfare. */
-  awaken: () => {
-    [392, 523, 659, 784].forEach((f, i) => tone(f, i * 0.09, 0.3, "triangle", 0.14));
-  },
-  turn: () => {
-    tone(523, 0, 0.12, "sine", 0.1);
-    tone(784, 0.1, 0.2, "sine", 0.1);
-  },
-  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * 0.12, 0.45, "triangle", 0.18)),
-  lose: () => [392, 349, 311, 262].forEach((f, i) => tone(f, i * 0.16, 0.5, "triangle", 0.16)),
-};
-type SoundName = keyof typeof SOUNDS;
-
-/** Joue un son tout de suite (ex. pour tester le volume dans les Paramètres). */
-export const playSound = (name: SoundName): void => SOUNDS[name]();
 
 // ---------------------------------------------------------------------------
 // Animations et sons d'un lot d'événements
@@ -298,7 +184,7 @@ export function runEffects(events: GameEvent[], before: Map<string, DOMRect>, na
   // Un même son n'est joué qu'une fois par coup (ex. plusieurs cartes piochées).
   let delay = 0;
   for (const s of sounds) {
-    setTimeout(() => SOUNDS[s](), delay);
+    setTimeout(() => playSound(s), delay);
     delay += 70;
   }
 }

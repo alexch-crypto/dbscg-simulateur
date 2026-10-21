@@ -50,6 +50,7 @@ import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type
 import { applyTheme, loadPrefs, savePrefs } from "./prefs";
 import { imageUrl, loadImages, setImagesEnabled } from "./images";
 import { runEffects, setFxSettings, snapshotRects } from "./fx";
+import { setAudioSettings, startMusic, stopMusic } from "./audio";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -67,6 +68,7 @@ const prefs = loadPrefs();
 applyTheme(prefs.theme);
 setImagesEnabled(prefs.showImages);
 setFxSettings(prefs);
+setAudioSettings(prefs);
 /** Événements du dernier coup, pas encore animés (sons et animations après l'affichage). */
 let pendingFx: GameEvent[] = [];
 const decks = new DeckStore([
@@ -153,6 +155,7 @@ let inMenu = true;
 
 function showMenu(): void {
   inMenu = true;
+  stopMusic();
   app.innerHTML = renderMenu(menuHost);
 }
 
@@ -1071,6 +1074,9 @@ function render(): void {
         </div>
       </aside>
     </main>`;
+  // Musique de combat pendant la partie, arrêtée à la fin.
+  if (view.result) stopMusic();
+  else startMusic();
   // Sons et animations du dernier coup.
   const fx = pendingFx;
   pendingFx = [];

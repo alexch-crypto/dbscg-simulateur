@@ -20,10 +20,13 @@ export interface Prefs {
   volume: number;
   /** Animations de la partie. */
   animations: boolean;
+  /** Musique de combat pendant la partie, et son volume (0 à 1). */
+  music: boolean;
+  musicVolume: number;
 }
 
 const KEY = "dbscg.prefs";
-const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, sound: true, volume: 0.5, animations: true };
+const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, sound: true, volume: 0.5, animations: true, music: true, musicVolume: 0.3 };
 
 export function loadPrefs(): Prefs {
   try {
@@ -39,6 +42,8 @@ export function loadPrefs(): Prefs {
       sound: typeof raw.sound === "boolean" ? raw.sound : DEFAULTS.sound,
       volume: typeof raw.volume === "number" && raw.volume >= 0 && raw.volume <= 1 ? raw.volume : DEFAULTS.volume,
       animations: typeof raw.animations === "boolean" ? raw.animations : DEFAULTS.animations,
+      music: typeof raw.music === "boolean" ? raw.music : DEFAULTS.music,
+      musicVolume: typeof raw.musicVolume === "number" && raw.musicVolume >= 0 && raw.musicVolume <= 1 ? raw.musicVolume : DEFAULTS.musicVolume,
     };
   } catch {
     return { ...DEFAULTS };
