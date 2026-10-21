@@ -43,6 +43,13 @@ export function checkCondition(s: GameState, player: PlayerId, c: Json, db: Card
       return leader?.traits.includes(c["value"] as string) ?? false;
     case "leader_not_trait":
       return !(leader?.traits.includes(c["value"] as string) ?? false);
+    case "leader_back_character_and_color": {
+      // « Si votre Leader de côté dos est un <X> vert » : on lit le VERSO de la carte Leader, qu'il
+      // soit retourné ou non (décision du joueur).
+      const def = db.get(s.players[player].leader.cardId);
+      const back = def?.back;
+      return (back?.character.includes(c["character"] as string) ?? false) && (back?.colors.includes(c["color"] as never) ?? false);
+    }
     case "leader_character_and_color": {
       if (c["leader_face"] === "back" && s.players[player].leader.side !== "back") return false;
       return (leader?.character.includes(c["character"] as string) ?? false) && (leader?.colors.includes(c["color"] as never) ?? false);

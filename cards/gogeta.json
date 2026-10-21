@@ -437,7 +437,7 @@
       "abilities": [
         {
           "kind": "permanent",
-          "condition": [{ "check": "leader_character_and_color", "character": "Gogeta (GT)", "color": "green", "leader_face": "back" }],
+          "condition": [{ "check": "leader_back_character_and_color", "character": "Gogeta (GT)", "color": "green" }],
           "effect": [{ "do": "modify_energy_cost", "target": "this", "zone": "hand", "amount": -4 }],
           "text": "Permanent — Si votre Leader de côté dos est un <Gogeta (GT)> vert, réduisez de 4 le coût d'énergie de cette carte dans votre main."
         },

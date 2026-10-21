@@ -204,6 +204,18 @@ describe("« Si cette carte a été jouée depuis une Dispersion » et « à la 
     expect(r.state.players.P1.battle.find((c) => c.uid === tired.uid)!.mode).toBe("active");
   });
 
+  it("« Leader de côté dos » : on lit le verso de la carte Leader, même s'il n'est pas encore éveillé (coût 5 → 1)", () => {
+    const s = p1Main();
+    expect(s.players.P1.leader.side).toBe("front");
+    energies(s, "P1", 1);
+    const goku = give(s, "P1", "BT31-046", "hand");
+    const vegeta = give(s, "P1", "BT31-051", "hand");
+    for (const card of [goku, vegeta]) {
+      const a = getLegalActions(s, "P1", ctx).find((x) => x.type === "PLAY_CARD" && x.uid === card.uid);
+      expect(a && a.type === "PLAY_CARD" ? a.payment.energy.length + a.payment.markers : -1).toBe(1);
+    }
+  });
+
   it("Devenir le Plus Fort : coût -4 avec Gogeta au dos, en Inertie, puis retour en main à la fin du tour", () => {
     const s = p1Main();
     s.players.P1.leader.side = "back";
