@@ -214,6 +214,12 @@ describe("« Si cette carte a été jouée depuis une Dispersion » et « à la 
       const a = getLegalActions(s, "P1", ctx).find((x) => x.type === "PLAY_CARD" && x.uid === card.uid);
       expect(a && a.type === "PLAY_CARD" ? a.payment.energy.length + a.payment.markers : -1).toBe(1);
     }
+    // Une fois éveillé (côté dos visible), c'est toujours le même verso : la réduction reste.
+    s.players.P1.leader.side = "back";
+    for (const card of [goku, vegeta]) {
+      const a = getLegalActions(s, "P1", ctx).find((x) => x.type === "PLAY_CARD" && x.uid === card.uid);
+      expect(a && a.type === "PLAY_CARD" ? a.payment.energy.length + a.payment.markers : -1).toBe(1);
+    }
   });
 
   it("Devenir le Plus Fort : coût -4 avec Gogeta au dos, en Inertie, puis retour en main à la fin du tour", () => {
