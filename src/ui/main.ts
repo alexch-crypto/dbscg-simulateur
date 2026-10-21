@@ -118,8 +118,17 @@ let currentActions: Action[] = [];
  *  - attack : une carte est choisie pour attaquer, on clique sur sa cible ;
  *  - pay    : on choisit soi-même les Énergies à passer en mode Inertie.
  */
-type Intent = { kind: "attack"; attacker: string; target: string | null } | { kind: "pay"; action: Paid };
+type Intent =
+  | { kind: "attack"; attacker: string; target: string | null }
+  /** `variants` : même coup pour plusieurs valeurs de X (Unisson) — X = nombre d'Énergies payées. */
+  | { kind: "pay"; action: Paid; variants?: Paid[] }
+  /** Choisir des cartes sur le plateau ou dans la main (Union-Fusion, Successeur...) ; le moteur valide. */
+  | { kind: "select"; options: Action[]; picks: string[]; label: string }
+  /** Déclarer un nombre X (« déclarez un nombre », [-X]). */
+  | { kind: "number"; options: Action[]; x: number };
 let intent: Intent | null = null;
+/** Groupes de coups affichés par le panneau (un bouton par groupe). */
+let currentGroups: Action[][] = [];
 /** Décision pour laquelle les cartes ont déjà été pré-sélectionnées (choix d'une seule carte possible). */
 let preselectedFor = "";
 
@@ -628,6 +637,85 @@ function startAction(a: Action): void {
   act(a);
 }
 
+/** Cartes à choisir pour un coup de type « sélection » (matériaux, cartes sacrifiées...). */
+function selectionOf(a: Action): string[] | null {
+  if (a.type === "UNION_FUSION") return a.materials;
+  if (a.type === "SUCCESSOR") return a.sacrifice;
+  if (a.type === "PLAY_Z" && a.sacrifice) return [a.sacrifice];
+  return null;
+}
+
+/** Clé de regroupement : les variantes d'un même coup (cartes choisies, X) partagent un bouton. */
+function groupKey(a: Action, i: number): string {
+  if (a.type === "UNION_FUSION") return `union:${a.uid}`;
+  if (a.type === "SUCCESSOR") return `succ:${a.uid}`;
+  if (a.type === "PLAY_Z" && a.sacrifice) return `sac:${a.uid}`;
+  if ((a.type === "PLAY_CARD" || a.type === "PLAY_Z") && a.x !== undefined) return `x:${a.type}:${a.uid}`;
+  if (a.type === "ACTIVATE" && a.x !== undefined) return `num:${a.uid}:${a.index}`;
+  return `one:${i}`;
+}
+
+function groupActions(list: Action[]): Action[][] {
+  const groups = new Map<string, Action[]>();
+  list.forEach((a, i) => {
+    const k = groupKey(a, i);
+    groups.set(k, [...(groups.get(k) ?? []), a]);
+  });
+  return [...groups.values()];
+}
+
+/** Texte du bouton d'un groupe. */
+function groupLabel(g: Action[], view: PlayerView): string {
+  const a = g[0]!;
+  if (g.length === 1) return shortLabel(a, view);
+  const name = "uid" in a && typeof a.uid === "string" ? nameOf(view, db, a.uid) : "";
+  if (a.type === "UNION_FUSION") return `Union-Fusion : jouer ${name} (choisir les cartes)`;
+  if (a.type === "SUCCESSOR") return `Successeur : jouer ${name} (choisir les cartes à sacrifier)`;
+  if (a.type === "PLAY_Z" && a.sacrifice) return `Jouer ${name} en plaçant une carte de la Zone de Combat dans la Dispersion`;
+  if (a.type === "PLAY_CARD" || a.type === "PLAY_Z") return `Jouer ${name} (X = nombre d'Énergies payées)`;
+  if (a.type === "ACTIVATE") return shortLabel(a, view).replace(/ \(X = \d+\)/, " (choisir X)");
+  return shortLabel(a, view);
+}
+
+/** Un bouton de groupe : un seul coup → on le lance ; sinon, on passe au geste adapté. */
+function startGroup(g: Action[]): void {
+  const a = g[0]!;
+  if (g.length === 1) return startAction(a);
+  errorMessage = "";
+  if (selectionOf(a)) {
+    const label =
+      a.type === "UNION_FUSION" ? "Choisissez les cartes de votre main pour l'Union-Fusion (même puissance)" :
+      a.type === "SUCCESSOR" ? "Choisissez les cartes de Combat à sacrifier (total des coûts = coût de la carte)" :
+      "Choisissez la carte de votre Zone de Combat à placer dans la Dispersion";
+    intent = { kind: "select", options: g, picks: [], label };
+    return render();
+  }
+  if ((a.type === "PLAY_CARD" || a.type === "PLAY_Z") && a.x !== undefined) {
+    const variants = (g as Paid[]).slice().sort((p, q) => ((p as { x?: number }).x ?? 0) - ((q as { x?: number }).x ?? 0));
+    const base = variants[0]!;
+    intent = { kind: "pay", action: base, variants };
+    selectedEnergy.clear();
+    for (const uid of base.payment.energy) selectedEnergy.add(uid);
+    selectedMarkers = base.payment.markers;
+    return render();
+  }
+  if (a.type === "ACTIVATE" && a.x !== undefined) {
+    intent = { kind: "number", options: g, x: Math.min(...g.map((x) => (x as { x?: number }).x ?? 0)) };
+    return render();
+  }
+  startAction(a);
+}
+
+/** Le coup « sélection » qui correspond exactement aux cartes choisies (ordre sans importance). */
+function matchingSelection(i: Extract<Intent, { kind: "select" }>): Action | undefined {
+  const key = [...i.picks].sort().join(",");
+  return i.options.find((a) => [...(selectionOf(a) ?? [])].sort().join(",") === key);
+}
+
+/** Pour les Unissons : la variante dont X égale le nombre d'Énergies et marqueurs choisis. */
+const payVariant = (i: Extract<Intent, { kind: "pay" }>): Paid | undefined =>
+  i.variants ? i.variants.find((v) => (v as { x?: number }).x === selectedEnergy.size + selectedMarkers) : i.action;
+
 /** Cibles possibles d'une attaque avec `attacker`. */
 const attackTargets = (attacker: string): string[] =>
   currentActions.flatMap((a) => (a.type === "ATTACK" && a.attacker === attacker ? [a.target] : []));
@@ -663,6 +751,8 @@ function gestureClasses(uid: string, info: RenderInfo): string[] {
     intent?.kind === "attack" && intent.target === uid ? "targeted" : "",
     intent?.kind === "attack" && intent.attacker === uid ? "attacking" : "",
     info.payable.has(uid) ? "payable" : "",
+    intent?.kind === "select" && intent.options.some((a) => selectionOf(a)?.includes(uid)) ? "pickable" : "",
+    intent?.kind === "select" && intent.picks.includes(uid) ? "picked" : "",
   ];
 }
 
@@ -900,12 +990,35 @@ function promptBar(view: PlayerView, info: RenderInfo): string {
       : `⚔ Attaque avec ${who} : cliquez sur la cible (entourée en rouge)`;
     return bar(text, `<button class="primary" data-confirm ${intent.target ? "" : "disabled"}>Valider l'attaque</button><button data-cancel>Annuler</button>`);
   }
+  if (intent?.kind === "select") {
+    const ok = !!matchingSelection(intent);
+    return bar(
+      `🃏 ${esc(intent.label)} <span class="muted">(choisie(s) : ${intent.picks.length})</span>`,
+      `<button class="primary" data-confirm ${ok ? "" : "disabled"}>Valider</button><button data-cancel>Annuler</button>`,
+    );
+  }
+  if (intent?.kind === "number") {
+    const xs = intent.options.map((a) => (a as { x?: number }).x ?? 0);
+    return bar(
+      `🔢 ${esc(shortLabel(intent.options[0]!, view).replace(/ \(X = \d+\)/, ""))} — X = <b>${intent.x}</b>`,
+      `<button data-num="-1" ${intent.x <= Math.min(...xs) ? "disabled" : ""}>−</button><button data-num="1" ${intent.x >= Math.max(...xs) ? "disabled" : ""}>+</button><button class="primary" data-confirm>Valider</button><button data-cancel>Annuler</button>`,
+    );
+  }
   if (intent?.kind === "pay") {
     const a = intent.action;
-    const n = needed(a);
     const chosen = selectedEnergy.size + selectedMarkers;
     const markers = view.players[a.player].energyMarkers;
     const cost = a.type === "PLAY_CARD" ? cardCostHint(view, a.uid) : "";
+    if (intent.variants) {
+      const xs = intent.variants.map((v) => (v as { x?: number }).x ?? 0);
+      const ok = !!payVariant(intent);
+      return bar(
+        `💠 ${esc(nameOf(view, db, (a as { uid: string }).uid))} — cochez de ${Math.min(...xs)} à ${Math.max(...xs)} Énergies : X = <b>${chosen}</b> (autant de marqueurs)${cost}`,
+        `<button class="primary" data-confirm ${ok ? "" : "disabled"}>Payer</button><button data-cancel>Annuler</button>`,
+        markers > 0 ? ` · marqueurs Énergie : <input type="number" min="0" max="${markers}" value="${selectedMarkers}" data-markers>` : "",
+      );
+    }
+    const n = needed(a);
     return bar(
       `💠 ${esc(shortLabel(a, view))} — choisissez ${n} Énergie(s) à passer en mode Inertie (${chosen}/${n})${cost}`,
       `<button class="primary" data-confirm ${chosen === n ? "" : "disabled"}>Payer</button><button data-cancel>Annuler</button>`,
@@ -952,16 +1065,20 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
       html += `<p class="hint">Cliquez sur les cartes entourées en vert, puis « Valider » dans le bandeau au-dessus du plateau.</p>`;
     } else if (intent?.kind === "pay") {
       html += `<p class="hint">Cliquez sur vos Énergies pour choisir celles à utiliser, puis « Payer » dans le bandeau. Celles proposées par défaut sont déjà cochées.</p>`;
+    } else if (intent?.kind === "select") {
+      html += `<p class="hint">Cliquez sur les cartes entourées en vert (dans votre main ou sur le plateau), puis « Valider » dans le bandeau. Le jeu vérifie que votre choix est possible.</p>`;
+    } else if (intent?.kind === "number") {
+      html += `<p class="hint">Choisissez X avec − et +, puis « Valider » dans le bandeau.</p>`;
     } else {
       // Actions de la carte sélectionnée (l'attaque se fait en cliquant sur la cible).
       if (selectedCard) {
-        const mine = currentActions.filter((a) => anchorOf(a) === selectedCard && a.type !== "ATTACK");
+        const mine = groupActions(currentActions.filter((a) => anchorOf(a) === selectedCard && a.type !== "ATTACK"));
         const attacks = attackTargets(selectedCard).length;
         html += `<div class="group"><h3>${esc(nameOf(view, db, selectedCard))}</h3>${
           attacks ? `<p class="hint">⚔ Pour attaquer : cliquez sur la cible entourée en rouge.</p>` : ""
         }${
           mine.length
-            ? mine.map((a) => button(a, view)).join("")
+            ? mine.map((g) => `<button data-group="${currentGroups.push(g) - 1}">${esc(groupLabel(g, view))}</button>`).join("")
             : attacks
               ? ""
               : `<p class="hint">Aucune action pour cette carte maintenant.</p>`
@@ -1008,6 +1125,9 @@ function render(): void {
   const view = currentView();
   const before = snapshotRects();
   currentActions = legalActions();
+  currentGroups = [];
+  // Un geste dont plus aucun coup n'est proposé est abandonné.
+  if ((intent?.kind === "select" || intent?.kind === "number") && !intent.options.some((a) => currentActions.some((c) => JSON.stringify(c) === JSON.stringify(a)))) intent = null;
   // Un geste dont le coup n'est plus proposé (la situation a changé) est abandonné.
   if (intent?.kind === "attack" && attackTargets(intent.attacker).length === 0) intent = null;
   if (intent?.kind === "pay" && !canDecide(view)) intent = null;
@@ -1110,7 +1230,7 @@ app.addEventListener("click", (event) => {
     return;
   }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-pile],[data-concede]",
+    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-pile],[data-concede],[data-group],[data-num]",
   );
   if (!el) return;
   if (el.dataset["concede"] !== undefined) {
@@ -1125,14 +1245,41 @@ app.addEventListener("click", (event) => {
     selectedMarkers = 0;
     return render();
   }
+  if (el.dataset["group"] !== undefined) {
+    const g = currentGroups[Number(el.dataset["group"])];
+    if (g) startGroup(g);
+    return;
+  }
+  if (el.dataset["num"] !== undefined && intent?.kind === "number") {
+    const xs = intent.options.map((a) => (a as { x?: number }).x ?? 0);
+    intent.x = Math.min(Math.max(...xs), Math.max(Math.min(...xs), intent.x + Number(el.dataset["num"])));
+    return render();
+  }
   if (el.dataset["confirm"] !== undefined) {
+    if (intent?.kind === "select") {
+      const a = matchingSelection(intent);
+      if (a) {
+        intent = null;
+        startAction(a);
+      }
+      return;
+    }
+    if (intent?.kind === "number") {
+      const x = intent.x;
+      const a = intent.options.find((o) => (o as { x?: number }).x === x);
+      intent = null;
+      if (a) startAction(a);
+      return;
+    }
     if (intent?.kind === "attack" && intent.target) {
       const { attacker, target: aimed } = intent;
       const a = currentActions.find((x) => x.type === "ATTACK" && x.attacker === attacker && x.target === aimed);
       if (a) return act(a);
     }
     if (intent?.kind === "pay") {
-      return act({ ...intent.action, payment: { energy: [...selectedEnergy], markers: selectedMarkers } });
+      const chosen = payVariant(intent);
+      if (!chosen) return;
+      return act({ ...chosen, payment: { energy: [...selectedEnergy], markers: selectedMarkers } });
     }
     return;
   }
@@ -1193,12 +1340,25 @@ app.addEventListener("click", (event) => {
   // 2) Mode paiement : cocher / décocher ses Énergies (les autres cartes ne réagissent pas).
   if (intent?.kind === "pay") {
     const mine = view.players[intent.action.player].energy.some((c) => isVisible(c) && c.uid === uid && c.mode === "active");
+    const max = intent.variants ? Math.max(...intent.variants.map((v) => (v as { x?: number }).x ?? 0)) : needed(intent.action);
     if (mine) {
       if (selectedEnergy.has(uid)) selectedEnergy.delete(uid);
-      else if (selectedEnergy.size + selectedMarkers < needed(intent.action)) selectedEnergy.add(uid);
+      else if (selectedEnergy.size + selectedMarkers < max) selectedEnergy.add(uid);
     }
     return render();
   }
+  // 2 bis) Choix de cartes (Union-Fusion, Successeur...) : cocher / décocher les cartes proposées.
+  if (intent?.kind === "select") {
+    const candidate = intent.options.some((a) => selectionOf(a)?.includes(uid));
+    const max = Math.max(...intent.options.map((a) => selectionOf(a)?.length ?? 0));
+    if (candidate) {
+      if (intent.picks.includes(uid)) intent.picks = intent.picks.filter((u) => u !== uid);
+      else if (intent.picks.length < max) intent.picks.push(uid);
+      else if (max === 1) intent.picks = [uid];
+    }
+    return render();
+  }
+  if (intent?.kind === "number") return;
   // 3) Visée d'une attaque : un clic sur une cible la choisit (il reste à valider).
   if (intent?.kind === "attack" && attackTargets(intent.attacker).includes(uid)) {
     intent.target = intent.target === uid ? null : uid;
