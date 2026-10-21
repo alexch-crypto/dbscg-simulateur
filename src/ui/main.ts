@@ -49,6 +49,7 @@ import { DeckStore, type SavedDeck } from "./decks";
 import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
 import { applyTheme, loadPrefs, savePrefs } from "./prefs";
 import { imageUrl, loadImages, setImagesEnabled } from "./images";
+import { runEffects, setFxSettings, snapshotRects } from "./fx";
 import "./style.css";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,9 @@ const ctx: GameContext = { cards: db };
 const prefs = loadPrefs();
 applyTheme(prefs.theme);
 setImagesEnabled(prefs.showImages);
+setFxSettings(prefs);
+/** Événements du dernier coup, pas encore animés (sons et animations après l'affichage). */
+let pendingFx: GameEvent[] = [];
 const decks = new DeckStore([
   { id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true },
   { id: "gogeta-base", name: "Gogeta GT (deck de base)", list: gogeta.deck!, builtIn: true },
@@ -330,6 +334,7 @@ const TOAST_EVENTS = new Set<GameEvent["type"]>([
 function addToLog(events: GameEvent[]): void {
   const view = currentView();
   const me = onlineMe();
+  pendingFx.push(...events);
   for (const e of events) {
     const text = describeEvent(e, view, db);
     log.push(text);
@@ -460,6 +465,7 @@ async function importGame(file: File): Promise<void> {
   record = { ...loaded, actions: [...loaded.actions] };
   log = [];
   addToLog(replay.events);
+  pendingFx = []; // pas d'animation pour toute une partie rechargée
   log.push(`(Partie chargée : ${loaded.actions.length} coups rejoués.)`);
   errorMessage = "";
   resetSelection();
@@ -978,6 +984,7 @@ function render(): void {
   }
   if (onlineGuest) errorMessage = onlineGuest.lastError;
   if (state && mode === "hotseat" && !revealed && !state.result) {
+    pendingFx = [];
     app.innerHTML = `
       <div class="pass-screen">
         <h1>Passez l'ordinateur à ${screenOwner}</h1>
@@ -987,6 +994,7 @@ function render(): void {
     return;
   }
   const view = currentView();
+  const before = snapshotRects();
   currentActions = legalActions();
   // Un geste dont le coup n'est plus proposé (la situation a changé) est abandonné.
   if (intent?.kind === "attack" && attackTargets(intent.attacker).length === 0) intent = null;
@@ -1063,6 +1071,11 @@ function render(): void {
         </div>
       </aside>
     </main>`;
+  // Sons et animations du dernier coup.
+  const fx = pendingFx;
+  pendingFx = [];
+  const plainName = (p: PlayerId) => (onlineHost ?? onlineGuest)?.names[p] || p;
+  runEffects(fx, before, plainName, onlineMe());
   // Quand il faut choisir des cartes, on les amène à l'écran.
   if (info.pickable.size > 0 && newDecision) {
     document.querySelector(".card.pickable")?.scrollIntoView({ block: "center", behavior: "smooth" });

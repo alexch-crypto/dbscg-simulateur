@@ -15,10 +15,15 @@ export interface Prefs {
   logHidden: boolean;
   /** Afficher les images des cartes importées (si le joueur en a importé). */
   showImages: boolean;
+  /** Sons de la partie et leur volume (0 à 1). */
+  sound: boolean;
+  volume: number;
+  /** Animations de la partie. */
+  animations: boolean;
 }
 
 const KEY = "dbscg.prefs";
-const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true };
+const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, sound: true, volume: 0.5, animations: true };
 
 export function loadPrefs(): Prefs {
   try {
@@ -31,6 +36,9 @@ export function loadPrefs(): Prefs {
       counterPrompt: raw.counterPrompt === "only_if_playable" ? "only_if_playable" : DEFAULTS.counterPrompt,
       logHidden: typeof raw.logHidden === "boolean" ? raw.logHidden : oldLog === "1",
       showImages: typeof raw.showImages === "boolean" ? raw.showImages : DEFAULTS.showImages,
+      sound: typeof raw.sound === "boolean" ? raw.sound : DEFAULTS.sound,
+      volume: typeof raw.volume === "number" && raw.volume >= 0 && raw.volume <= 1 ? raw.volume : DEFAULTS.volume,
+      animations: typeof raw.animations === "boolean" ? raw.animations : DEFAULTS.animations,
     };
   } catch {
     return { ...DEFAULTS };

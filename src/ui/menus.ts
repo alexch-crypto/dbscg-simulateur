@@ -8,6 +8,7 @@ import { countOf, deckErrors, deckFromFile, deckToFile, newId, type DeckStore, t
 import { COLOR_NAMES } from "./labels";
 import { applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
 import { clearImages, imageCount, imageUrl, importImages, setImagesEnabled } from "./images";
+import { playSound, setFxSettings } from "./fx";
 
 export type Screen = "home" | "play" | "decks" | "deck-edit" | "cards" | "settings";
 export type Mode = "solo" | "hotseat" | "online";
@@ -396,6 +397,11 @@ function settings(host: MenuHost): string {
         Par défaut, toujours demander si je veux contrer
         <span class="hint">Conseillé en ligne : sinon l'adversaire peut deviner que vous avez un contre en main.</span></label>
       <label class="check"><input type="checkbox" data-pref-log ${p.logHidden ? "checked" : ""}> Masquer le journal de la partie</label>
+      <h2>Sons et animations</h2>
+      <label class="check"><input type="checkbox" data-pref-sound ${p.sound ? "checked" : ""}> Sons</label>
+      <label class="field"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${p.volume}" data-pref-volume></label>
+      <button data-sound-test>Tester le son</button>
+      <label class="check"><input type="checkbox" data-pref-anim ${p.animations ? "checked" : ""}> Animations (cartes jouées, flèches d'attaque, dégâts...)</label>
       <h2>Images des cartes</h2>
       <p class="hint">Les images restent uniquement dans ce navigateur : elles ne sont jamais envoyées ni publiées.
         Choisissez les fichiers du dossier <b>images-cartes</b> (nommés par numéro de carte, ex. BT24-056.jpg).</p>
@@ -601,6 +607,11 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
     host.render();
     return true;
   }
+  if (d["soundTest"] !== undefined) {
+    playSound("attack");
+    setTimeout(() => playSound("hit"), 350);
+    return true;
+  }
   if (d["imagesClear"] !== undefined) {
     if (window.confirm("Effacer toutes les images de cartes de ce navigateur ?")) {
       void clearImages().then(() => {
@@ -675,6 +686,12 @@ export function menuInput(el: HTMLInputElement, host: MenuHost, final: boolean):
     savePrefs(prefs);
   } else if (d["prefLog"] !== undefined) {
     prefs.logHidden = el.checked;
+    savePrefs(prefs);
+  } else if (d["prefSound"] !== undefined || d["prefAnim"] !== undefined || d["prefVolume"] !== undefined) {
+    if (d["prefSound"] !== undefined) prefs.sound = el.checked;
+    if (d["prefAnim"] !== undefined) prefs.animations = el.checked;
+    if (d["prefVolume"] !== undefined) prefs.volume = Math.min(1, Math.max(0, Number(el.value) || 0));
+    setFxSettings(prefs);
     savePrefs(prefs);
   } else if (d["prefImages"] !== undefined) {
     prefs.showImages = el.checked;
