@@ -267,12 +267,16 @@ describe("9-6-3 : ordre de résolution", () => {
     expect(r.state.pending).toMatchObject({ type: "CHOOSE_AUTO", player: "P2" });
     const options = (r.state.pending as Extract<GameState["pending"], { type: "CHOOSE_AUTO" }>).options;
     expect(options.map((o) => o.label)).toEqual(["Double Auto : A : piochez 1", "Double Auto : B : +5000"]);
-    // On résout B d'abord : l'autre se résout ensuite automatiquement (il n'en reste qu'une).
+    // On résout B d'abord ; le jeu redemande ensuite pour la dernière (A), même seule.
     const step = applyAction(r.state, { type: "CHOOSE_AUTO", player: "P2", id: options[1]!.id }, testCtx);
     if (!step.ok) throw new Error(step.error);
-    const types = step.events.map((e) => e.type);
-    expect(types.indexOf("POWER_MODIFIED")).toBeLessThan(types.indexOf("CARDS_DRAWN"));
-    expect(step.state.pending).toEqual({ type: "MAIN", player: "P2" });
+    expect(step.events.map((e) => e.type)).toContain("POWER_MODIFIED");
+    expect(step.events.map((e) => e.type)).not.toContain("CARDS_DRAWN");
+    expect(step.state.pending).toMatchObject({ type: "CHOOSE_AUTO", player: "P2", options: [{ id: options[0]!.id }] });
+    const last = applyAction(step.state, { type: "CHOOSE_AUTO", player: "P2", id: options[0]!.id }, testCtx);
+    if (!last.ok) throw new Error(last.error);
+    expect(last.events.map((e) => e.type)).toContain("CARDS_DRAWN");
+    expect(last.state.pending).toEqual({ type: "MAIN", player: "P2" });
   });
 
   it("le joueur actif résout ses [Auto.] avant celles du joueur non actif", () => {

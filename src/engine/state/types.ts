@@ -422,6 +422,8 @@ export interface GameState {
   checkpointThen: Continuation | null;
   /** Prochain numéro d'[Auto.] en suspens. */
   nextAutoId: number;
+  /** Joueurs qui avaient plusieurs [Auto.] en même temps : on leur demande l'ordre jusqu'à la dernière. */
+  autoAsk: PlayerId[];
   /** Modifications de puissance temporaires en cours. */
   powerMods: PowerModifier[];
   /** Autres effets continus en cours (verrouillage, annulation, mots-clés donnés). */

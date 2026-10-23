@@ -85,6 +85,7 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     autoQueue: [],
     checkpointThen: null,
     nextAutoId: 1,
+    autoAsk: [],
     powerMods: [],
     effects: [],
     counterWindow: null,

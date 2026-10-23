@@ -111,7 +111,8 @@ export function describeAction(a: Action, view: PlayerView, db: CardDatabase): s
       return a.indices.length === 0 ? "Ne prendre aucune carte de Vie" : `Prendre la carte de Vie ${a.indices.map((i) => `n°${i + 1}`).join(" + ")}`;
     case "CHOOSE_AUTO": {
       const option = view.pending?.type === "CHOOSE_AUTO" ? view.pending.options.find((o) => o.id === a.id) : undefined;
-      return `Résoudre d'abord : ${option?.label ?? `capacité n°${a.id}`}`;
+      const several = view.pending?.type === "CHOOSE_AUTO" && view.pending.options.length > 1;
+      return `${several ? "Résoudre d'abord" : "Résoudre"} : ${option?.label ?? `capacité n°${a.id}`}`;
     }
     case "CHOOSE_BLIND":
       return a.indices.length === 0 ? "Ne rien choisir" : `Choisir ${a.indices.length} carte(s) au hasard dans la main adverse`;
@@ -198,7 +199,9 @@ export function describePending(p: PendingDecision | null): string {
     case "CHOOSE_OPTION":
       return p.prompt;
     case "CHOOSE_AUTO":
-      return "Plusieurs de vos capacités [Auto.] se déclenchent : choisissez laquelle résoudre en premier.";
+      return p.options.length > 1
+        ? `${p.options.length} capacités [Auto.] attendent : choisissez laquelle résoudre maintenant.`
+        : "Dernière capacité [Auto.] en attente : résolvez-la.";
     case "COUNTER_WINDOW":
       return p.on === "play"
         ? "Fenêtre de contre : votre adversaire joue une carte. Voulez-vous activer un [Contre : Mise en jeu] ?"

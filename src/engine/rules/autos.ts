@@ -234,8 +234,14 @@ function continueCheckpoint(s: GameState, ctx: GameContext, events: GameEvent[])
   // Le joueur actif d'abord, puis le joueur non actif.
   for (const player of [s.turnPlayer, opponentOf(s.turnPlayer)]) {
     const mine = s.autoQueue.filter((a) => a.player === player);
-    if (mine.length === 0) continue;
-    if (mine.length === 1) {
+    if (mine.length === 0) {
+      s.autoAsk = s.autoAsk.filter((p) => p !== player);
+      continue;
+    }
+    // Plusieurs [Auto.] en même temps : le joueur choisit l'ordre, et on lui redemande à chaque
+    // fois, jusqu'à la dernière (pour qu'il voie qu'elle se résout aussi).
+    if (mine.length > 1 && !s.autoAsk.includes(player)) s.autoAsk.push(player);
+    if (mine.length === 1 && !s.autoAsk.includes(player)) {
       resolveQueued(s, ctx, mine[0]!, events);
     } else {
       // 9-6-3 : le joueur choisit laquelle résoudre.

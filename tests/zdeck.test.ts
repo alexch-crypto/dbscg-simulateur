@@ -178,6 +178,8 @@ describe("Unisson Z : Cooler", () => {
     expect(r.state.pending).toMatchObject({ type: "CHOOSE_AUTO", player: "P2" });
     const options = (r.state.pending as { options: { id: number; label: string }[] }).options;
     r = play(r.state, { type: "CHOOSE_AUTO", player: "P2", id: options.find((o) => o.label.startsWith("Cooler"))!.id });
+    // La dernière [Auto.] (celle de Freezer) est redemandée, même seule.
+    r = play(r.state, { type: "CHOOSE_AUTO", player: "P2", id: options.find((o) => !o.label.startsWith("Cooler"))!.id });
     r = play(r.state, { type: "CHOOSE_LIFE", player: "P2", indices: [] });
     expect(powerOf(r.state, { player: "P2", uid: cooler.uid }, ctx)).toBe(15000);
   });
