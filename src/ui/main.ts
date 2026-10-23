@@ -72,6 +72,12 @@ setFxSettings(prefs);
 setAudioSettings(prefs);
 /** Événements du dernier coup, pas encore animés (sons et animations après l'affichage). */
 let pendingFx: GameEvent[] = [];
+/**
+ * Cartes montrées à l'adversaire (3-1-7 : une carte prise dans son deck est révélée). Affichées
+ * dans un encart qui ne bloque pas la partie, jusqu'à ce qu'on le ferme.
+ */
+let reveals: { id: number; player: PlayerId; cardIds: string[] }[] = [];
+let nextRevealId = 1;
 const decks = new DeckStore([
   { id: "freezer-base", name: "Freezer (deck de base)", list: freezer.deck!, builtIn: true },
   { id: "gogeta-base", name: "Gogeta GT (deck de base)", list: gogeta.deck!, builtIn: true },
@@ -166,6 +172,8 @@ let inMenu = true;
 function showMenu(): void {
   inMenu = true;
   stopMusic();
+  reveals = [];
+  renderReveals();
   app.innerHTML = renderMenu(menuHost);
 }
 
@@ -350,6 +358,15 @@ function addToLog(events: GameEvent[]): void {
   const me = onlineMe();
   pendingFx.push(...events);
   for (const e of events) {
+    // Carte prise dans le deck et révélée : on la montre à l'adversaire (pas à celui qui la prend).
+    if (e.type === "CARDS_TO_HAND" && e.cardIds.every((id) => id !== null) && e.cardIds.length > 0 && e.player !== me) {
+      const id = nextRevealId++;
+      reveals.push({ id, player: e.player, cardIds: e.cardIds as string[] });
+      setTimeout(() => {
+        reveals = reveals.filter((r) => r.id !== id);
+        renderReveals();
+      }, 20000);
+    }
     const text = describeEvent(e, view, db);
     log.push(text);
     // En ligne : ce que fait l'adversaire, et les dégâts que l'on subit, s'affichent aussi en notification.
@@ -480,6 +497,7 @@ async function importGame(file: File): Promise<void> {
   log = [];
   addToLog(replay.events);
   pendingFx = []; // pas d'animation pour toute une partie rechargée
+  reveals = [];
   log.push(`(Partie chargée : ${loaded.actions.length} coups rejoués.)`);
   errorMessage = "";
   resetSelection();
@@ -1097,6 +1115,44 @@ function actionsPanel(view: PlayerView, info: RenderInfo): string {
   return html;
 }
 
+// ---------------------------------------------------------------------------
+// Cartes révélées (encart hors de #app, qui est redessiné à chaque coup)
+// ---------------------------------------------------------------------------
+
+const revealBox = document.createElement("div");
+revealBox.className = "reveals";
+document.body.append(revealBox);
+revealBox.addEventListener("click", (event) => {
+  const el = (event.target as HTMLElement).closest<HTMLElement>("[data-reveal-close]");
+  if (!el) return;
+  const id = Number(el.dataset["revealClose"]);
+  reveals = reveals.filter((r) => r.id !== id);
+  renderReveals();
+});
+
+/** Affiche les cartes révélées que ce joueur doit voir. */
+function renderReveals(): void {
+  // Deux joueurs sur le même écran : seulement celles de l'autre joueur que celui devant l'écran.
+  const shown = inMenu ? [] : reveals.filter((r) => mode !== "hotseat" || r.player !== screenOwner);
+  const name = (p: PlayerId) => esc((onlineHost ?? onlineGuest)?.names[p] || p);
+  revealBox.innerHTML = shown
+    .map(
+      (r) => `<div class="reveal">
+        <div class="reveal-head"><span>👁 <b>${name(r.player)}</b> montre la carte prise dans son deck</span><button data-reveal-close="${r.id}">OK</button></div>
+        <div class="reveal-cards">${r.cardIds
+          .map((id) => {
+            const img = imageUrl(id);
+            const def = db.get(id);
+            return img
+              ? `<img src="${img}" alt="${esc(def?.name ?? id)}" data-cid="${esc(id)}">`
+              : `<div class="reveal-text" data-cid="${esc(id)}">${def ? cardSheet(def) : esc(id)}</div>`;
+          })
+          .join("")}</div>
+      </div>`,
+    )
+    .join("");
+}
+
 /** Nom affiché d'un joueur : son pseudo en ligne s'il en a un. */
 function playerLabel(p: PlayerId): string {
   const names = onlineHost?.names ?? onlineGuest?.names;
@@ -1207,6 +1263,7 @@ function render(): void {
   // Musique de combat pendant la partie, arrêtée à la fin.
   if (view.result) stopMusic();
   else startMusic();
+  renderReveals();
   // Sons et animations du dernier coup.
   const fx = pendingFx;
   pendingFx = [];

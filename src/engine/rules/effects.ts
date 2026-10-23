@@ -590,7 +590,7 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
       return false;
     }
     case "look_top_deck": {
-      // Les cartes choisies vont en main (révélées si demandé), puis le deck est mélangé.
+      // Les cartes choisies vont en main (révélées, 3-1-7), puis le deck est mélangé.
       const p = s.players[r.player];
       const pick = step["pick"] as Json;
       const taken = uids.map((uid) => p.deck.splice(p.deck.findIndex((c) => c.uid === uid), 1)[0]!);
@@ -600,7 +600,9 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
           type: "CARDS_TO_HAND",
           player: r.player,
           from: "deck",
-          cardIds: pick["reveal"] ? taken.map((c) => c.cardId) : taken.map(() => null),
+          // 3-1-7 : une carte indiquée (avec un critère) qui passe du deck à la main est révélée à
+          // tous les joueurs, même si le texte ne le précise pas.
+          cardIds: pick["reveal"] || pick["filter"] || pick["filter_any"] ? taken.map((c) => c.cardId) : taken.map(() => null),
         });
       }
       // 20-12-3 : les cartes regardées et non prises restent dans le deck, qui est mélangé.

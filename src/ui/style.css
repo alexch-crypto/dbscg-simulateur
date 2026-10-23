@@ -461,3 +461,11 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 
 .playmat-preview { width: 320px; max-width: 100%; aspect-ratio: 16 / 7; border-radius: 12px; background-size: cover; background-position: center; box-shadow: 0 4px 12px #0006; margin: 6px 0; }
 .playmat-preview.mat-default { background-size: 70px 70px, cover; }
+
+/* Cartes révélées à l'adversaire : encart non bloquant, à gauche. */
+.reveals { position: fixed; z-index: 55; left: 14px; top: 64px; display: flex; flex-direction: column; gap: 10px; pointer-events: none; }
+.reveal { pointer-events: auto; background: var(--panel); border: 2px solid var(--accent); border-radius: 12px; padding: 8px 10px; box-shadow: var(--shadow); max-width: 360px; animation: toast-in .25s ease-out; }
+.reveal-head { display: flex; gap: 10px; align-items: center; justify-content: space-between; font-size: 13px; margin-bottom: 6px; }
+.reveal-cards { display: flex; gap: 8px; flex-wrap: wrap; }
+.reveal-cards img { width: 150px; border-radius: 8px; box-shadow: 0 2px 8px #0008; }
+.reveal-text { width: 220px; max-height: 260px; overflow-y: auto; font-size: 11px; background: var(--panel2); border-radius: 8px; padding: 6px; }
