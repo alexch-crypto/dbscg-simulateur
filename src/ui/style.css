@@ -469,3 +469,13 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .reveal-cards { display: flex; gap: 8px; flex-wrap: wrap; }
 .reveal-cards img { width: 150px; border-radius: 8px; box-shadow: 0 2px 8px #0008; }
 .reveal-text { width: 220px; max-height: 260px; overflow-y: auto; font-size: 11px; background: var(--panel2); border-radius: 8px; padding: 6px; }
+
+/* Nom des cartes masqué sur le plateau (option) : l'illustration est plus visible. */
+.hide-names .table .card.has-img .mini-name { visibility: hidden; }
+.hide-names .table .hand .mini-name { visibility: visible; }
+/* Paramètres ouverts en pleine partie : fenêtre à droite, sans bloquer le plateau. */
+.game-settings { position: fixed; z-index: 60; right: 14px; top: 56px; width: 320px; max-width: calc(100vw - 32px); max-height: calc(100vh - 80px); overflow-y: auto; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px; }
+.game-settings[hidden] { display: none; }
+.game-settings h2 { margin: 0; }
+.game-settings h3 { margin: 8px 0 0; font-size: 14px; }
+.game-settings-head { display: flex; justify-content: space-between; align-items: center; }

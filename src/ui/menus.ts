@@ -6,7 +6,7 @@ import { MAIN_DECK_MAX, MAIN_DECK_MIN, MAX_COPIES, Z_DECK_MAX, type CardDatabase
 import { cardSheet, colorDots, esc, KEYWORD_NAMES, TYPE_NAMES } from "./common";
 import { countOf, deckErrors, deckFromFile, deckToFile, newId, type DeckStore, type SavedDeck } from "./decks";
 import { COLOR_NAMES } from "./labels";
-import { applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
+import { applyNames, applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
 import { clearImages, imageCount, imageUrl, importImages, setImagesEnabled } from "./images";
 import { setFxSettings } from "./fx";
 import { playSound, setAudioSettings } from "./audio";
@@ -384,28 +384,56 @@ function gallery(host: MenuHost): string {
   </div>`;
 }
 
-function settings(host: MenuHost): string {
-  const p = host.prefs;
+/** Choix du thème (boutons radio). */
+function themeChoices(p: Prefs): string {
   const theme = (value: Theme, label: string) =>
     `<label class="check inline"><input type="radio" name="theme" data-theme-choice="${value}" ${p.theme === value ? "checked" : ""}> ${label}</label>`;
+  return `<div>${theme("dark", "Sombre")}${theme("light", "Clair")}${theme("auto", "Comme mon ordinateur")}</div>`;
+}
+
+/** Réglages des sons, de la musique et des animations. */
+function soundSettings(p: Prefs): string {
+  return `<label class="check"><input type="checkbox" data-pref-sound ${p.sound ? "checked" : ""}> Sons</label>
+      <label class="field"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${p.volume}" data-pref-volume></label>
+      <label class="check"><input type="checkbox" data-pref-music ${p.music ? "checked" : ""}> Musique de combat pendant la partie</label>
+      <label class="field"><span>Volume de la musique</span><input type="range" min="0" max="1" step="0.05" value="${p.musicVolume}" data-pref-music-volume></label>
+      <label class="check"><input type="checkbox" data-pref-anim ${p.animations ? "checked" : ""}> Animations (cartes jouées, flèches d'attaque, dégâts...)</label>`;
+}
+
+/** Réglages de l'affichage des cartes. */
+function cardDisplaySettings(p: Prefs): string {
+  return `<label class="check"><input type="checkbox" data-pref-images ${p.showImages ? "checked" : ""}> Afficher les images des cartes</label>
+      <label class="check"><input type="checkbox" data-pref-names ${p.showNames ? "" : "checked"}> Masquer le nom des cartes sur le plateau
+        <span class="hint">Seulement pour les cartes qui ont une image, et pas dans la main. Le survol montre toujours la carte entière.</span></label>`;
+}
+
+/** Paramètres utiles en pleine partie (ouverts par le bouton ⚙ du plateau). */
+export function gameSettings(p: Prefs): string {
+  return `<div class="game-settings-head"><h2>Paramètres</h2><button data-settings-close>Fermer</button></div>
+      <h3>Sons et animations</h3>
+      ${soundSettings(p)}
+      <h3>Affichage</h3>
+      ${cardDisplaySettings(p)}
+      <label class="check"><input type="checkbox" data-pref-log ${p.logHidden ? "checked" : ""}> Masquer le journal de la partie</label>
+      ${themeChoices(p)}`;
+}
+
+function settings(host: MenuHost): string {
+  const p = host.prefs;
   return `<div class="menu">${topBar("Paramètres")}
     <section class="panel">
       <h2>Profil</h2>
       <label class="field"><span>Pseudo</span><input data-pref-pseudo maxlength="20" value="${esc(p.pseudo)}" placeholder="Affiché à votre adversaire en ligne"></label>
       <h2>Apparence</h2>
-      <div>${theme("dark", "Sombre")}${theme("light", "Clair")}${theme("auto", "Comme mon ordinateur")}</div>
+      ${themeChoices(p)}
       <h2>Partie</h2>
       <label class="check"><input type="checkbox" data-pref-prompt ${p.counterPrompt === "always" ? "checked" : ""}>
         Par défaut, toujours demander si je veux contrer
         <span class="hint">Conseillé en ligne : sinon l'adversaire peut deviner que vous avez un contre en main.</span></label>
       <label class="check"><input type="checkbox" data-pref-log ${p.logHidden ? "checked" : ""}> Masquer le journal de la partie</label>
       <h2>Sons et animations</h2>
-      <label class="check"><input type="checkbox" data-pref-sound ${p.sound ? "checked" : ""}> Sons</label>
-      <label class="field"><span>Volume</span><input type="range" min="0" max="1" step="0.05" value="${p.volume}" data-pref-volume></label>
+      ${soundSettings(p)}
       <button data-sound-test>Tester le son</button>
-      <label class="check"><input type="checkbox" data-pref-music ${p.music ? "checked" : ""}> Musique de combat pendant la partie</label>
-      <label class="field"><span>Volume de la musique</span><input type="range" min="0" max="1" step="0.05" value="${p.musicVolume}" data-pref-music-volume></label>
-      <label class="check"><input type="checkbox" data-pref-anim ${p.animations ? "checked" : ""}> Animations (cartes jouées, flèches d'attaque, dégâts...)</label>
       <h2>Tapis de jeu</h2>
       <p class="hint">Sans image, le tapis orange avec une Dragon Ball est utilisé. En ligne, votre adversaire voit votre tapis (l'image est réduite avant l'envoi) et vous voyez le sien.</p>
       <div class="playmat-preview ${myPlaymat() ? "" : "mat-default"}"${myPlaymat() ? ` style="background-image: url('${myPlaymat()}')"` : ""}></div>
@@ -416,7 +444,7 @@ function settings(host: MenuHost): string {
       <h2>Images des cartes</h2>
       <p class="hint">Les images restent uniquement dans ce navigateur : elles ne sont jamais envoyées ni publiées.
         Choisissez les fichiers du dossier <b>images-cartes</b> (nommés par numéro de carte, ex. BT24-056.jpg).</p>
-      <label class="check"><input type="checkbox" data-pref-images ${p.showImages ? "checked" : ""}> Afficher les images des cartes</label>
+      ${cardDisplaySettings(p)}
       <div class="toolbar">
         <label class="file-button">Importer des images<input type="file" accept="image/*" multiple data-images-import hidden></label>
         ${imageCount() > 0 ? `<button class="danger" data-images-clear>Effacer les images (${imageCount()})</button>` : `<span class="muted">Aucune image importée.</span>`}
@@ -718,6 +746,10 @@ export function menuInput(el: HTMLInputElement, host: MenuHost, final: boolean):
     if (d["prefMusicVolume"] !== undefined) prefs.musicVolume = Math.min(1, Math.max(0, Number(el.value) || 0));
     setFxSettings(prefs);
     setAudioSettings(prefs);
+    savePrefs(prefs);
+  } else if (d["prefNames"] !== undefined) {
+    prefs.showNames = !el.checked;
+    applyNames(prefs.showNames);
     savePrefs(prefs);
   } else if (d["prefImages"] !== undefined) {
     prefs.showImages = el.checked;

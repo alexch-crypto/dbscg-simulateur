@@ -15,6 +15,8 @@ export interface Prefs {
   logHidden: boolean;
   /** Afficher les images des cartes importées (si le joueur en a importé). */
   showImages: boolean;
+  /** Afficher le nom des cartes posées sur le plateau (le survol montre toujours la carte entière). */
+  showNames: boolean;
   /** Sons de la partie et leur volume (0 à 1). */
   sound: boolean;
   volume: number;
@@ -26,7 +28,7 @@ export interface Prefs {
 }
 
 const KEY = "dbscg.prefs";
-const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, sound: true, volume: 0.5, animations: true, music: true, musicVolume: 0.3 };
+const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, showNames: true, sound: true, volume: 0.5, animations: true, music: true, musicVolume: 0.3 };
 
 export function loadPrefs(): Prefs {
   try {
@@ -39,6 +41,7 @@ export function loadPrefs(): Prefs {
       counterPrompt: raw.counterPrompt === "only_if_playable" ? "only_if_playable" : DEFAULTS.counterPrompt,
       logHidden: typeof raw.logHidden === "boolean" ? raw.logHidden : oldLog === "1",
       showImages: typeof raw.showImages === "boolean" ? raw.showImages : DEFAULTS.showImages,
+      showNames: typeof raw.showNames === "boolean" ? raw.showNames : DEFAULTS.showNames,
       sound: typeof raw.sound === "boolean" ? raw.sound : DEFAULTS.sound,
       volume: typeof raw.volume === "number" && raw.volume >= 0 && raw.volume <= 1 ? raw.volume : DEFAULTS.volume,
       animations: typeof raw.animations === "boolean" ? raw.animations : DEFAULTS.animations,
@@ -56,6 +59,11 @@ export function savePrefs(prefs: Prefs): void {
   } catch {
     // Stockage indisponible : les préférences ne seront simplement pas mémorisées.
   }
+}
+
+/** Masque ou affiche le nom des cartes du plateau. */
+export function applyNames(show: boolean): void {
+  document.documentElement.classList.toggle("hide-names", !show);
 }
 
 /** Applique le thème à la page (« auto » suit le réglage clair / sombre de l'ordinateur). */

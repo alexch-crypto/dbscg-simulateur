@@ -46,8 +46,8 @@ import { hostRoom, joinRoom, normalizeCode, type GuestLink, type HostLink } from
 import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName } from "./labels";
 import { cardSheet, colorDots, costText, esc, isVisible, KEYWORD_NAMES } from "./common";
 import { DeckStore, type SavedDeck } from "./decks";
-import { goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
-import { applyTheme, loadPrefs, savePrefs } from "./prefs";
+import { gameSettings, goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
+import { applyNames, applyTheme, loadPrefs, savePrefs } from "./prefs";
 import { imageUrl, loadImages, setImagesEnabled } from "./images";
 import { runEffects, setFxSettings, snapshotRects } from "./fx";
 import { setAudioSettings, startMusic, stopMusic } from "./audio";
@@ -67,6 +67,7 @@ const ctx: GameContext = { cards: db };
 /** Préférences du joueur (pseudo, thème...) et ses decks, mémorisés dans le navigateur. */
 const prefs = loadPrefs();
 applyTheme(prefs.theme);
+applyNames(prefs.showNames);
 setImagesEnabled(prefs.showImages);
 setFxSettings(prefs);
 setAudioSettings(prefs);
@@ -172,6 +173,7 @@ let inMenu = true;
 function showMenu(): void {
   inMenu = true;
   stopMusic();
+  closeGameSettings();
   reveals = [];
   renderReveals();
   app.innerHTML = renderMenu(menuHost);
@@ -1153,6 +1155,38 @@ function renderReveals(): void {
     .join("");
 }
 
+// ---------------------------------------------------------------------------
+// Paramètres en pleine partie (fenêtre hors de #app : elle reste ouverte quand le plateau est
+// redessiné, même si l'adversaire joue pendant qu'on règle le son)
+// ---------------------------------------------------------------------------
+
+const settingsBox = document.createElement("div");
+settingsBox.className = "game-settings panel";
+settingsBox.hidden = true;
+document.body.append(settingsBox);
+/** Les réglages redessinent le plateau, pas le menu. */
+const gameSettingsHost: MenuHost = { ...menuHost, render: () => render() };
+
+function openGameSettings(): void {
+  settingsBox.innerHTML = gameSettings(prefs);
+  settingsBox.hidden = false;
+}
+
+function closeGameSettings(): void {
+  settingsBox.hidden = true;
+  settingsBox.innerHTML = "";
+}
+
+settingsBox.addEventListener("click", (event) => {
+  if ((event.target as HTMLElement).closest("[data-settings-close]")) closeGameSettings();
+});
+settingsBox.addEventListener("change", (event) => {
+  menuInput(event.target as HTMLInputElement, gameSettingsHost, true);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !settingsBox.hidden) closeGameSettings();
+});
+
 /** Nom affiché d'un joueur : son pseudo en ligne s'il en a un. */
 function playerLabel(p: PlayerId): string {
   const names = onlineHost?.names ?? onlineGuest?.names;
@@ -1224,6 +1258,7 @@ function render(): void {
       <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
         <button data-new title="Retour au menu">☰ Menu</button>
+        <button data-settings title="Son, musique, affichage...">⚙ Paramètres</button>
         ${!view.result && currentActions.some((a) => a.type === "CONCEDE") ? `<button class="danger" data-concede title="Abandonner la partie">Abandonner</button>` : ""}
         ${onlineGuest ? "" : `<button data-export title="Télécharge la partie (pour signaler un bug)">Exporter</button>`}
         ${
@@ -1287,9 +1322,14 @@ app.addEventListener("click", (event) => {
     return;
   }
   const el = target.closest<HTMLElement>(
-    "[data-action],[data-reveal],[data-new],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-pile],[data-concede],[data-group],[data-num]",
+    "[data-action],[data-reveal],[data-new],[data-settings],[data-replay],[data-export],[data-validate],[data-confirm],[data-cancel],[data-slot],[data-toggle-log],[data-zpile],[data-pile],[data-concede],[data-group],[data-num]",
   );
   if (!el) return;
+  if (el.dataset["settings"] !== undefined) {
+    if (settingsBox.hidden) openGameSettings();
+    else closeGameSettings();
+    return;
+  }
   if (el.dataset["concede"] !== undefined) {
     // Abandon : toujours confirmé, pour éviter un mauvais clic.
     const concede = currentActions.find((a) => a.type === "CONCEDE");
