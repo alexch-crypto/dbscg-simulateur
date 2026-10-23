@@ -201,6 +201,8 @@ export type GameEvent =
   | { type: "CARD_REVEALED_MODE"; uid: string }
   | { type: "CARDS_MODE_CHANGED"; uids: string[]; mode: "active" | "rest" }
   | { type: "POWER_MODIFIED"; uid: string; amount: number; until: "turn" | "battle" }
+  /** 21-6 / 21-8 : la puissance d'une carte de Combat ou d'une Unisson est passée à zéro ou moins. */
+  | { type: "POWER_ZERO"; player: PlayerId; uid: string; cardId: string; power: number; unison: boolean }
   /** Cartes de Vie rajoutées à la main par un effet (cardIds connus seulement si face visible). */
   | { type: "LIFE_TO_HAND"; player: PlayerId; indices: number[]; cardIds: (string | null)[] }
   | { type: "GAME_OVER"; result: GameResult };

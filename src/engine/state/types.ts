@@ -352,6 +352,8 @@ export interface PowerModifier {
   until: "turn" | "battle";
   /** Puissance de Combo (et non puissance de la carte). */
   combo?: boolean;
+  /** Maître de la Capacité qui a donné ce bonus ou ce malus. */
+  by?: PlayerId;
 }
 
 /** Désigne un Leader ou une carte de Combat en jeu. */

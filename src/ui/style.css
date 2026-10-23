@@ -479,3 +479,15 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .game-settings h2 { margin: 0; }
 .game-settings h3 { margin: 8px 0 0; font-size: 14px; }
 .game-settings-head { display: flex; justify-content: space-between; align-items: center; }
+
+/* Puissance modifiée par un effet : actuelle en couleur, imprimée barrée à côté. */
+.pw-up { color: #4ade80; }
+.pw-down { color: #f87171; }
+.pw-up, .pw-down { text-shadow: 0 0 3px #000, 0 0 2px #000; cursor: help; }
+.pw-printed { opacity: .65; font-weight: 400; font-size: .85em; }
+/* Bande du combat en cours (entre les deux tapis) : puissance de chaque camp, avec la Combo. */
+.table-middle .battle { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: center; }
+.battle-vs { opacity: .7; }
+.battle-total { color: #fcd34d; }
+.battle-win { color: #4ade80; font-weight: 700; }
+.battle-lose { color: #f87171; font-weight: 700; }

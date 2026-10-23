@@ -13,7 +13,7 @@
 import { abilitiesOf, type RawAbility } from "../cards/abilities";
 import type { Action, GameContext, GameEvent } from "../protocol";
 import { opponentOf, type CardInstance, type CardRef, type Continuation, type GameState, type PlayerId, type QueuedAuto } from "../state/types";
-import { battleEndStep, continueAttack, startBlockerStep } from "./battle";
+import { applyPowerRules, battleEndStep, continueAttack, startBlockerStep } from "./battle";
 import { abilityConditions, checkConditions, matchesFilter } from "./conditions";
 import { checkDefeat } from "./defeat";
 import { afterCounterLink } from "./counters";
@@ -231,6 +231,8 @@ function continueCheckpoint(s: GameState, ctx: GameContext, events: GameEvent[])
     s.checkpointThen = null;
     return;
   }
+  // 21-6 / 21-8 : puissances à zéro ou moins (peut déclencher des [Auto.], résolues ci-dessous).
+  applyPowerRules(s, ctx, events);
   // Le joueur actif d'abord, puis le joueur non actif.
   for (const player of [s.turnPlayer, opponentOf(s.turnPlayer)]) {
     const mine = s.autoQueue.filter((a) => a.player === player);

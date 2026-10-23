@@ -15,12 +15,18 @@ export function forgetCard(s: GameState, uid: string): void {
 
 /**
  * 21-9 / 13-5-2 : retirer des marqueurs d'une Unisson ; à 0 marqueur, elle quitte la Zone Unisson.
+ * 21-7-2 : s'il lui en reste, tous les effets continus sur elle (dont ceux sur sa puissance)
+ * prennent fin : elle revient à son état d'origine.
  */
 export function removeMarkers(s: GameState, ctx: GameContext, player: PlayerId, card: CardInstance, n: number, events: GameEvent[]): void {
   if (n <= 0 || !s.players[player].unison.includes(card)) return;
   card.markers = Math.max(0, (card.markers ?? 0) - n);
   events.push({ type: "MARKERS_CHANGED", player, uid: card.uid, cardId: card.cardId, markers: card.markers });
   if (card.markers === 0) leaveUnison(s, ctx, player, card, events);
+  else {
+    s.powerMods = s.powerMods.filter((m) => m.uid !== card.uid);
+    s.effects = s.effects.filter((e) => e.uid !== card.uid);
+  }
 }
 
 /** Une Unisson quitte la Zone Unisson : Dispersion, ou retirée de la partie si c'est une carte Z. */

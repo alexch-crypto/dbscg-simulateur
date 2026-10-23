@@ -22,7 +22,7 @@ import {
   type PlayerView,
 } from "../engine";
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const HOST: PlayerId = "P1";
 export const GUEST: PlayerId = "P2";
 
@@ -67,7 +67,7 @@ export class OnlineHost {
 
   snapshot(player: PlayerId): Snapshot | null {
     if (!this.state) return null;
-    return { view: getPlayerView(this.state, player), actions: getLegalActions(this.state, player, this.ctx) };
+    return { view: getPlayerView(this.state, player, this.ctx), actions: getLegalActions(this.state, player, this.ctx) };
   }
 
   private sendUpdate(events: GameEvent[]): void {

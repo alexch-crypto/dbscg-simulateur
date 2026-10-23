@@ -540,13 +540,13 @@ function legalActions(): Action[] {
  * du joueur devant l'écran seulement.
  */
 function currentView(): PlayerView {
-  if (onlineHost?.state) return getPlayerView(onlineHost.state, HOST);
+  if (onlineHost?.state) return getPlayerView(onlineHost.state, HOST, ctx);
   if (onlineGuest?.snapshot) return onlineGuest.snapshot.view;
   const s = state!;
-  if (mode === "hotseat") return getPlayerView(s, screenOwner);
-  const main = getPlayerView(s, decider());
+  if (mode === "hotseat") return getPlayerView(s, screenOwner, ctx);
+  const main = getPlayerView(s, decider(), ctx);
   const other = decider() === "P1" ? "P2" : "P1";
-  return { ...main, players: { ...main.players, [other]: getPlayerView(s, other).players[other] } };
+  return { ...main, players: { ...main.players, [other]: getPlayerView(s, other, ctx).players[other] } };
 }
 
 /** Joueur affiché en bas de l'écran. */
@@ -802,7 +802,7 @@ function cardBox(c: CardView, info: RenderInfo, position?: string): string {
     ...gestureClasses(c.uid, info),
   ];
   const cost = def?.cost ? `${def.cost.total}` : "";
-  const power = def?.power !== undefined ? `${def.power / 1000}k` : def?.type === "extra" ? "Extra" : "";
+  const power = info.view.powers[c.uid] ? powerLabel(info.view.powers[c.uid]!) : def?.power !== undefined ? `${def.power / 1000}k` : def?.type === "extra" ? "Extra" : "";
   return `
     <div class="${classes.join(" ")}${artStyle(c.cardId) ? " has-img" : ""}" data-card="${esc(c.uid)}" data-slot="${esc(id)}" data-cid="${esc(c.cardId)}"${artStyle(c.cardId)}>
       <div class="mini-top">${colorDots(def?.colors ?? [])}<span class="mini-cost">${cost}</span></div>
@@ -833,8 +833,23 @@ function leaderBox(leader: LeaderState, info: RenderInfo): string {
     }${artStyle(leader.z?.cardId ?? leader.cardId, !leader.z && leader.side === "back")}>
       <div class="mini-top">${colorDots(face?.colors ?? [])}<span class="mini-cost">${leader.z ? "Leader Z" : leader.side === "front" ? "Leader" : "Éveillé"}</span></div>
       <div class="mini-name">${esc(face?.name ?? leader.cardId)}</div>
-      <div class="mini-power">${(face?.power ?? 0) / 1000}k</div>
+      <div class="mini-power">${info.view.powers[leader.uid] ? powerLabel(info.view.powers[leader.uid]!) : `${(face?.power ?? 0) / 1000}k`}</div>
     </div>`;
+}
+
+/** « 15 000 » ; « 15k » en court. */
+const thousands = (n: number) => n.toLocaleString("fr-FR");
+const kilo = (n: number) => `${n / 1000}k`;
+
+/**
+ * Puissance d'une carte en jeu : la puissance actuelle, en vert si elle a augmenté, en rouge si
+ * elle a baissé (avec la puissance imprimée, barrée, à côté).
+ */
+function powerLabel(p: { power: number; printed: number }): string {
+  if (p.power === p.printed) return kilo(p.power);
+  const diff = p.power - p.printed;
+  const title = `Puissance imprimée ${thousands(p.printed)} → actuelle ${thousands(p.power)} (${diff > 0 ? "+" : ""}${thousands(diff)})`;
+  return `<span class="${diff > 0 ? "pw-up" : "pw-down"}" title="${title}">${kilo(p.power)}</span> <s class="pw-printed">${kilo(p.printed)}</s>`;
 }
 
 /** Fond d'une carte miniature : son illustration (si le joueur a importé les images). */
@@ -987,9 +1002,21 @@ function battleSummary(view: PlayerView): string {
   const b = view.battle;
   if (!b) return "";
   const target = b.target.uid !== b.defender.uid ? ` (bloqué, cible d'origine : ${esc(nameOf(view, db, b.target.uid))})` : "";
-  return `<div class="battle">⚔ Combat : <b>${esc(nameOf(view, db, b.attacker.uid))}</b> attaque <b>${esc(
-    nameOf(view, db, b.defender.uid),
-  )}</b>${target}</div>`;
+  // Puissance de chaque camp pour ce combat : celle de la carte, plus la Combo (8-4-4 / 8-4-5).
+  const side = (ref: { player: PlayerId; uid: string }, label: string) => {
+    const power = view.powers[ref.uid]?.power ?? 0;
+    const combo = view.comboPowers[ref.player];
+    return {
+      total: power + combo,
+      html: `<span class="battle-side">${label} <b>${esc(nameOf(view, db, ref.uid))}</b> : ${thousands(power)}${
+        combo ? ` + Combo ${thousands(combo)} = <b class="battle-total">${thousands(power + combo)}</b>` : ""
+      }</span>`,
+    };
+  };
+  const atk = side(b.attacker, "⚔ Attaquant");
+  const def = side(b.defender, "🛡 Défenseur");
+  const outcome = atk.total >= def.total ? `<span class="battle-win">→ l'attaque passe</span>` : `<span class="battle-lose">→ l'attaque échoue</span>`;
+  return `<div class="battle">${atk.html}<span class="battle-vs">contre</span>${def.html}${outcome}${target ? `<div class="muted">${target}</div>` : ""}</div>`;
 }
 
 const button = (a: Action, view: PlayerView, extraClass = "") =>

@@ -1,6 +1,8 @@
 // Vue d'un joueur : ce qu'il a le droit de voir, et rien d'autre.
 // C'est ce qui sera envoyé par le réseau à chaque joueur.
 
+import type { GameContext } from "./protocol";
+import { comboPower, powerOf, printedPowerOf } from "./rules/battle";
 import {
   PLAYER_IDS,
   type CardInstance,
@@ -73,6 +75,13 @@ export interface PlayerView {
   settings: GameState["settings"];
   result: GameState["result"];
   players: Record<PlayerId, PlayerZonesView>;
+  /**
+   * Puissance actuelle (avec les effets en cours) et imprimée des Leaders, cartes de Combat et
+   * Unissons, par uid. Information publique.
+   */
+  powers: Record<string, { power: number; printed: number }>;
+  /** Puissance de Combo de chaque joueur (cartes en Zone de Combo, avec leurs bonus). */
+  comboPowers: Record<PlayerId, number>;
 }
 
 const show = (c: CardInstance): VisibleCard => ({
@@ -120,7 +129,24 @@ function pendingFor(state: GameState, viewer: PlayerId): GameState["pending"] {
   return structuredClone(pending);
 }
 
-export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
+/** Puissances actuelles et imprimées de tout ce qui est en jeu (vide sans base de cartes). */
+function powersOf(state: GameState, ctx?: GameContext): PlayerView["powers"] {
+  const powers: PlayerView["powers"] = {};
+  if (!ctx) return powers;
+  for (const player of PLAYER_IDS) {
+    const p = state.players[player];
+    const uids = [
+      p.leader.uid,
+      ...p.battle.filter((c) => ctx.cards.get(c.cardId)?.power !== undefined).map((c) => c.uid),
+      ...p.unison.map((c) => c.uid),
+    ];
+    for (const uid of uids) powers[uid] = { power: powerOf(state, { player, uid }, ctx), printed: printedPowerOf(state, { player, uid }, ctx) };
+  }
+  return powers;
+}
+
+/** `ctx` (la base de cartes) sert à calculer les puissances ; sans elle, elles sont absentes. */
+export function getPlayerView(state: GameState, viewer: PlayerId, ctx?: GameContext): PlayerView {
   const players = {} as Record<PlayerId, PlayerZonesView>;
   for (const p of PLAYER_IDS) players[p] = zonesFor(state.players[p], viewer);
   // Le générateur de hasard (state.rng) n'est volontairement pas recopié.
@@ -142,5 +168,7 @@ export function getPlayerView(state: GameState, viewer: PlayerId): PlayerView {
     settings: structuredClone(state.settings),
     result: state.result,
     players,
+    powers: powersOf(state, ctx),
+    comboPowers: { P1: ctx ? comboPower(state, "P1", ctx) : 0, P2: ctx ? comboPower(state, "P2", ctx) : 0 },
   };
 }

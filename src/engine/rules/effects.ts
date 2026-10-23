@@ -362,7 +362,7 @@ function applyChoice(s: GameState, ctx: GameContext, step: EffectStep, uids: str
     case "power_mod": {
       const until = step["duration"] as "turn" | "battle";
       for (const c of chosen) {
-        s.powerMods.push({ uid: c.uid, amount: step["amount"] as number, until });
+        s.powerMods.push({ uid: c.uid, amount: step["amount"] as number, until, by: r.player });
         events.push({ type: "POWER_MODIFIED", uid: c.uid, amount: step["amount"] as number, until });
       }
       return false;

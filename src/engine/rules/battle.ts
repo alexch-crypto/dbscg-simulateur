@@ -69,6 +69,48 @@ export function powerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
   return base + s.powerMods.filter((m) => m.uid === ref.uid && !m.combo).reduce((total, m) => total + m.amount, 0);
 }
 
+/** Puissance imprimée d'un Leader (selon sa face), d'une carte de Combat ou d'une Unisson. */
+export function printedPowerOf(s: GameState, ref: CardRef, ctx: GameContext): number {
+  const found = findInPlay(s, ref.player, ref.uid);
+  if (!found) return 0;
+  if (found.kind === "leader") return leaderFace(s.players[ref.player].leader, ctx.cards)?.power ?? 0;
+  return ctx.cards.get(found.card.cardId)?.power ?? 0;
+}
+
+/**
+ * Applications de règle sur la puissance (aux points de contrôle) :
+ * - 21-6 : une carte de Combat à zéro ou moins va en Dispersion, même avec [Immortalité] ;
+ *   l'effet qui a baissé sa puissance est considéré comme l'y avoir placée (21-6-2-1) ;
+ * - 21-8 : une Unisson à zéro ou moins perd 1 marqueur (et revient à sa puissance d'origine, 21-7-2).
+ * Un Leader peut avoir une puissance négative : aucune règle ne s'applique à lui.
+ */
+export function applyPowerRules(s: GameState, ctx: GameContext, events: GameEvent[]): void {
+  // Une Unisson peut perdre plusieurs marqueurs de suite si un effet la garde à zéro.
+  for (let guard = 0; guard < 100; guard++) {
+    let changed = false;
+    for (const player of [s.turnPlayer, opponentOf(s.turnPlayer)]) {
+      const p = s.players[player];
+      for (const card of [...p.battle]) {
+        if (!isBattleCard(card, ctx)) continue;
+        const power = powerOf(s, { player, uid: card.uid }, ctx);
+        if (power > 0) continue;
+        const lowering = s.powerMods.filter((m) => m.uid === card.uid && !m.combo && m.amount < 0 && m.by);
+        events.push({ type: "POWER_ZERO", player, uid: card.uid, cardId: card.cardId, power, unison: false });
+        koBattleCard(s, ctx, player, card, events, lowering[lowering.length - 1]?.by);
+        changed = true;
+      }
+      for (const card of [...p.unison]) {
+        const power = powerOf(s, { player, uid: card.uid }, ctx);
+        if (power > 0) continue;
+        events.push({ type: "POWER_ZERO", player, uid: card.uid, cardId: card.cardId, power, unison: true });
+        removeMarkers(s, ctx, player, card, 1, events);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+  }
+}
+
 /** Déplace une carte vers la Zone de Dispersion de son propriétaire. */
 function toDrop(s: GameState, card: CardInstance): void {
   card.mode = "active";
@@ -407,7 +449,7 @@ export function endStep(s: GameState, ctx: GameContext, events: GameEvent[]): vo
 }
 
 /** Somme des puissances de Combo de la Zone de Combo d'un joueur. */
-function comboPower(s: GameState, player: PlayerId, ctx: GameContext): number {
+export function comboPower(s: GameState, player: PlayerId, ctx: GameContext): number {
   // Puissance de Combo imprimée, plus les « +X de puissance de Combo » en cours.
   const bonus = (uid: string) => s.powerMods.filter((m) => m.uid === uid && m.combo).reduce((t, m) => t + m.amount, 0);
   return s.players[player].combo.reduce((total, c) => total + (ctx.cards.get(c.cardId)?.combo?.power ?? 0) + bonus(c.uid), 0);

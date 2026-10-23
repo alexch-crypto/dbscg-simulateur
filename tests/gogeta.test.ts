@@ -6,6 +6,7 @@ import {
   buildCardDatabase,
   createGame,
   getLegalActions,
+  getPlayerView,
   parseCardFile,
   type Action,
   type CardInstance,
@@ -328,5 +329,66 @@ describe("Audit : parties au hasard avec le deck Gogeta", () => {
       }
     }
     expect([...seen]).toEqual([]);
+  });
+});
+
+describe("Puissance à zéro ou moins (21-6 / 21-8) et puissances affichées", () => {
+  it("21-6 : une carte de Combat à 0 ou moins va en Dispersion au point de contrôle", () => {
+    const s = p1Main();
+    const saiyaman = give(s, "P2", "BT11-065", "battle");
+    s.powerMods.push({ uid: saiyaman.uid, amount: -10000, until: "turn", by: "P1" });
+    // La déclaration d'attaque passe par un point de contrôle.
+    const r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: s.players.P2.leader.uid });
+    expect(r.state.players.P2.battle.some((c) => c.uid === saiyaman.uid)).toBe(false);
+    expect(r.state.players.P2.drop.some((c) => c.uid === saiyaman.uid)).toBe(true);
+    expect(r.events).toContainEqual({ type: "POWER_ZERO", player: "P2", uid: saiyaman.uid, cardId: "BT11-065", power: 0, unison: false });
+  });
+
+  it("21-6 : une carte de Combat qui garde de la puissance reste en jeu", () => {
+    const s = p1Main();
+    const saiyaman = give(s, "P2", "BT11-065", "battle");
+    s.powerMods.push({ uid: saiyaman.uid, amount: -5000, until: "turn", by: "P1" });
+    const r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: s.players.P2.leader.uid });
+    expect(r.state.players.P2.battle.some((c) => c.uid === saiyaman.uid)).toBe(true);
+  });
+
+  it("21-8 / 21-7-2 : une Unisson à 0 perd 1 marqueur et revient à sa puissance normale", () => {
+    const s = p1Main();
+    const u = give(s, "P2", "BT31-145", "unison");
+    u.markers = 3;
+    s.powerMods.push({ uid: u.uid, amount: -100000, until: "turn", by: "P1" });
+    const r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: s.players.P2.leader.uid });
+    const after = r.state.players.P2.unison.find((c) => c.uid === u.uid)!;
+    expect(after.markers).toBe(2);
+    expect(r.state.powerMods.some((m) => m.uid === u.uid)).toBe(false);
+    expect(powerOf(r.state, { player: "P2", uid: u.uid }, ctx)).toBe(ctx.cards.get("BT31-145")!.power);
+  });
+
+  it("21-8 / 21-9 : une Unisson à 0 avec un seul marqueur va en Dispersion", () => {
+    const s = p1Main();
+    const u = give(s, "P2", "BT31-145", "unison");
+    u.markers = 1;
+    s.powerMods.push({ uid: u.uid, amount: -100000, until: "turn", by: "P1" });
+    const r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: s.players.P2.leader.uid });
+    expect(r.state.players.P2.unison).toHaveLength(0);
+  });
+
+  it("le Leader peut avoir une puissance négative", () => {
+    const s = p1Main();
+    const leader = s.players.P2.leader.uid;
+    s.powerMods.push({ uid: leader, amount: -100000, until: "turn", by: "P1" });
+    const r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: leader });
+    expect(powerOf(r.state, { player: "P2", uid: leader }, ctx)).toBeLessThan(0);
+    expect(r.events.some((e) => e.type === "POWER_ZERO")).toBe(false);
+  });
+
+  it("la vue donne la puissance actuelle et imprimée, et la puissance de Combo", () => {
+    const s = p1Main();
+    const leader = s.players.P1.leader.uid;
+    s.powerMods.push({ uid: leader, amount: 5000, until: "turn" });
+    const view = getPlayerView(s, "P2", ctx);
+    const printed = view.powers[leader]!.printed;
+    expect(view.powers[leader]).toEqual({ power: printed + 5000, printed });
+    expect(view.comboPowers).toEqual({ P1: 0, P2: 0 });
   });
 });

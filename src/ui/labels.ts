@@ -362,6 +362,10 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
       return `La puissance de ${n(e.uid)} devient ${e.value}.`;
     case "CARD_REVEALED_MODE":
       return `${n(e.uid)} passe en mode Révélé.`;
+    case "POWER_ZERO":
+      return e.unison
+        ? `Puissance de ${cardName(db, e.cardId)} (${e.player}) à ${e.power} : l'Unisson perd 1 marqueur et revient à sa puissance normale (21-8).`
+        : `Puissance de ${cardName(db, e.cardId)} (${e.player}) à ${e.power} : la carte va en Dispersion (21-6).`;
     case "POWER_MODIFIED":
       return `${n(e.uid)} : ${e.amount > 0 ? "+" : ""}${e.amount} de puissance pour tout le ${e.until === "turn" ? "tour" : "combat"}.`;
     case "LIFE_TO_HAND":

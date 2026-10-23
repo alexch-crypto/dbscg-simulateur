@@ -43,7 +43,7 @@ describe("Jeu en ligne : connexion et début de partie", () => {
     guest.hello(freezer.deck!, "always");
     expect(host.state).not.toBeNull();
     expect(guest.you).toBe(GUEST);
-    expect(guest.snapshot!.view).toEqual(getPlayerView(host.state!, GUEST));
+    expect(guest.snapshot!.view).toEqual(getPlayerView(host.state!, GUEST, ctx));
     expect(guest.snapshot!.actions).toEqual(getLegalActions(host.state!, GUEST, ctx));
     expect(host.state!.settings.counterPrompt).toEqual({ P1: "only_if_playable", P2: "always" });
   });
@@ -77,7 +77,7 @@ describe("Jeu en ligne : connexion et début de partie", () => {
     guest.snapshot = null;
     guest.hello(freezer.deck!, "always");
     expect(host.state).toBe(before);
-    expect(guest.snapshot!.view).toEqual(getPlayerView(host.state!, GUEST));
+    expect(guest.snapshot!.view).toEqual(getPlayerView(host.state!, GUEST, ctx));
   });
 });
 
