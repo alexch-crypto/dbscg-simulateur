@@ -337,7 +337,7 @@
         {
           "kind": "auto",
           "trigger": { "event": "leaves_unison_area", "who": "this" },
-          "effect": [{ "do": "next_union_discount", "filter": { "zone": "hand", "character": "Gogeta (GT)", "colors_any": ["green"] }, "reduce": { "generic": 1 }, "duration": "turn" }],
+          "effect": [{ "do": "next_union_discount", "filter": { "zone": "hand", "character": "Gogeta (GT)", "colors_any": ["green"] }, "reduce": { "generic": 1 }, "duration": "your_turn" }],
           "text": "Auto. — Quand cette carte quitte une Zone Unisson, jusqu'à la fin de votre tour, la prochaine fois que vous activez la Capacité Union d'un <Gogeta (GT)> vert depuis votre main, réduisez de (1) le coût de la Capacité."
         },
         {

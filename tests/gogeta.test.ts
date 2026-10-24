@@ -392,3 +392,18 @@ describe("Puissance à zéro ou moins (21-6 / 21-8) et puissances affichées", (
     expect(view.comboPowers).toEqual({ P1: 0, P2: 0 });
   });
 });
+
+describe("Pan, Adorable Soutien : « jusqu'à la fin de votre tour »", () => {
+  it("si elle quitte la Zone Unisson pendant le tour adverse, la réduction dure jusqu'à la fin du prochain tour de son maître", () => {
+    const s = p1Main();
+    const pan = give(s, "P2", "BT31-043", "unison");
+    pan.markers = 1;
+    // Pan tombe à 0 de puissance pendant le tour de P1 : elle perd son dernier marqueur et s'en va.
+    s.powerMods.push({ uid: pan.uid, amount: -100000, until: "turn", by: "P1" });
+    let r = play(s, { type: "ATTACK", player: "P1", attacker: s.players.P1.leader.uid, target: s.players.P2.leader.uid });
+    // L'[Auto.] d'attaque du Leader de P1 (facultative) passe d'abord.
+    if (r.state.pending?.type === "CHOOSE_OPTION") r = play(r.state, { type: "CHOOSE_OPTION", player: "P1", id: "no" });
+    expect(r.state.players.P2.unison).toHaveLength(0);
+    expect(r.state.nextDiscounts).toEqual([expect.objectContaining({ player: "P2", on: "union", generic: 1, untilTurn: s.turnNumber + 1 })]);
+  });
+});

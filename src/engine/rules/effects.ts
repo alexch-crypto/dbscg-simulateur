@@ -1350,13 +1350,18 @@ function runStep(s: GameState, ctx: GameContext, step: EffectStep, events: GameE
         filter: (step["filter"] ?? {}) as Json,
         colors: (reduce["specified"] ?? {}) as Record<string, number>,
         generic: (reduce["generic"] as number) ?? 0,
-        untilTurn: s.turnNumber,
+        // « Jusqu'à la fin de votre tour » pendant le tour adverse : jusqu'à la fin de votre prochain tour.
+        untilTurn: step["duration"] === "your_turn" && s.turnPlayer !== r.player ? s.turnNumber + 1 : s.turnNumber,
       });
       events.push({
         type: "EFFECT_NOTE",
         player: r.player,
         cardId: r.source.cardId,
-        text: step.do === "next_union_discount" ? "le prochain coût de Capacité Union sera réduit ce tour" : "la prochaine Extra Z placée ce tour coûtera moins cher",
+        text: step.do === "next_union_discount"
+          ? step["duration"] === "your_turn" && s.turnPlayer !== r.player
+            ? "le prochain coût de Capacité Union sera réduit jusqu'à la fin de son prochain tour"
+            : "le prochain coût de Capacité Union sera réduit ce tour"
+          : "la prochaine Extra Z placée ce tour coûtera moins cher",
       });
       return false;
     }
