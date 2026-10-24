@@ -273,6 +273,15 @@ const PROMPTS: Record<string, string> = {
   move_to_deck_top: "de la Dispersion adverse à placer sur le dessus de son deck",
 };
 
+/** « à jouer depuis votre Dispersion : <Vegeta (GT)> » : dit quelle carte est attendue. */
+function playFromPrompt(step: EffectStep): string {
+  if (step.do !== "play_from") return "";
+  const zones: Record<string, string> = { drop: "votre Dispersion", deck: "votre deck", hand: "votre main" };
+  const filter = (step["filter"] ?? {}) as Json;
+  const character = typeof filter["character"] === "string" ? ` : <${filter["character"]}>` : "";
+  return `à jouer depuis ${zones[String(step["zone"])] ?? ""}${character}`;
+}
+
 /**
  * Demande au joueur de choisir parmi `options`, ou applique directement si le choix est forcé.
  * Renvoie true si on attend le joueur.
@@ -304,7 +313,7 @@ function askOrApply(
     min: count.min,
     max: count.max,
     options,
-    prompt: `${what} carte(s) ${PROMPTS[step.do] ?? ""}${
+    prompt: `${what} carte(s) ${PROMPTS[step.do] ?? playFromPrompt(step)}${
       maxTotalCost !== undefined ? ` (total des coûts d'énergie : ${maxTotalCost} ou moins)` : ""
     }`.trim(),
     ...(looked ? { looked } : {}),

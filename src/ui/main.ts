@@ -1079,7 +1079,8 @@ function promptBar(view: PlayerView, info: RenderInfo): string {
     const what = min === max ? `${min}` : `${min} à ${max}`;
     return bar(
       `🎯 ${esc(describePending(p))} <span class="muted">(${what} · choisie(s) : ${n})</span>`,
-      `<button class="primary" data-validate ${n >= min && n <= max ? "" : "disabled"}>Valider</button>`,
+      // Rien de choisi alors que c'est permis : le bouton le dit, pour ne pas passer le choix par erreur.
+      `<button class="primary" data-validate ${n >= min && n <= max ? "" : "disabled"}>${n === 0 && min === 0 ? "Ne rien prendre" : "Valider"}</button>`,
     );
   }
   return "";

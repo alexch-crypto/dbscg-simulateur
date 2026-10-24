@@ -407,3 +407,20 @@ describe("Pan, Adorable Soutien : « jusqu'à la fin de votre tour »", () => {
     expect(r.state.nextDiscounts).toEqual([expect.objectContaining({ player: "P2", on: "union", generic: 1, untilTurn: s.turnNumber + 1 })]);
   });
 });
+
+describe("Leader Gogeta SS4, Vaniteux : Activation : Principale", () => {
+  it("place un Gogeta dans la Dispersion et joue un Son Goku ET un Vegeta depuis la Dispersion", () => {
+    const s = p1Main();
+    s.players.P1.leader.side = "back";
+    const gog = give(s, "P1", "BT31-052", "battle");
+    const goku = give(s, "P1", "BT31-044", "drop");
+    const vegeta = give(s, "P1", "BT31-049", "drop");
+    let r = play(s, find(s, (a) => a.type === "ACTIVATE" && a.uid === s.players.P1.leader.uid && a.index === 2));
+    expect(r.state.players.P1.drop.map((c) => c.uid)).toContain(gog.uid);
+    expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", prompt: expect.stringContaining("<Son Goku (GT)>") });
+    r = play(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [goku.uid] });
+    expect(r.state.pending).toMatchObject({ type: "CHOOSE_CARDS", prompt: expect.stringContaining("<Vegeta (GT)>") });
+    r = play(r.state, { type: "CHOOSE_CARDS", player: "P1", uids: [vegeta.uid] });
+    expect(r.state.players.P1.battle.map((c) => c.uid)).toEqual(expect.arrayContaining([goku.uid, vegeta.uid]));
+  });
+});
