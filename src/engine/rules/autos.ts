@@ -22,6 +22,7 @@ import { isNegated } from "./keywords";
 import { leaderAbilities, leaderCardId } from "./leader";
 import { finishPlay } from "./play";
 import { finishZPlay } from "./zdeck";
+import { continueSetupTutor } from "./setup";
 
 // ---------------------------------------------------------------------------
 // Déclencheurs
@@ -341,6 +342,9 @@ export function continueWith(s: GameState, ctx: GameContext, then: Continuation,
       return;
     case "attack_after_tax":
       continueAttack(s, ctx, events);
+      return;
+    case "setup_tutor":
+      continueSetupTutor(s, ctx, then.next, events);
       return;
   }
 }

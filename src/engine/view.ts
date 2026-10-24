@@ -73,6 +73,8 @@ export interface PlayerView {
   restrictions: GameState["restrictions"];
   /** Réglages des joueurs. */
   settings: GameState["settings"];
+  /** Règles de la partie (officielles ou personnalisées). */
+  rules: GameState["rules"];
   result: GameState["result"];
   players: Record<PlayerId, PlayerZonesView>;
   /**
@@ -166,6 +168,7 @@ export function getPlayerView(state: GameState, viewer: PlayerId, ctx?: GameCont
     attackTaxes: structuredClone(state.attackTaxes),
     restrictions: structuredClone(state.restrictions),
     settings: structuredClone(state.settings),
+    rules: { ...state.rules },
     result: state.result,
     players,
     powers: powersOf(state, ctx),

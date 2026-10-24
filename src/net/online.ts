@@ -20,9 +20,10 @@ import {
   type GameState,
   type PlayerId,
   type PlayerView,
+  type GameRules,
 } from "../engine";
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const HOST: PlayerId = "P1";
 export const GUEST: PlayerId = "P2";
 
@@ -52,6 +53,8 @@ export class OnlineHost {
   names: Record<PlayerId, string> = { P1: "", P2: "" };
   /** Tapis de jeu (image « data: »), vide = tapis par défaut. L'interface vérifie l'image. */
   playmats: Record<PlayerId, string> = { P1: "", P2: "" };
+  /** Règles de la partie, choisies par l'hôte (absentes = règles officielles). */
+  rules: Partial<GameRules> | undefined = undefined;
 
   constructor(
     private readonly ctx: GameContext,
@@ -95,13 +98,13 @@ export class OnlineHost {
       }
       const decks = { [HOST]: this.hostDeck, [GUEST]: msg.deck } as Record<PlayerId, DeckList>;
       const counterPrompt = { [HOST]: this.hostPrompt, [GUEST]: msg.counterPrompt } as Record<PlayerId, CounterPrompt>;
-      const created = createGame({ decks, seed: this.seed, counterPrompt }, this.ctx.cards);
+      const created = createGame({ decks, seed: this.seed, counterPrompt, ...(this.rules ? { rules: this.rules } : {}) }, this.ctx.cards);
       if (!created.ok) {
         this.send({ t: "error", message: `deck invalide : ${created.errors.join(" ; ")}` });
         return;
       }
       this.state = created.state;
-      this.record = newRecord(this.seed, decks, counterPrompt);
+      this.record = newRecord(this.seed, decks, counterPrompt, this.rules);
       this.sendUpdate(created.events);
       this.onChange(created.events);
       return;

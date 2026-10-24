@@ -130,8 +130,8 @@ function backToMain(s: GameState): void {
 
 /** Cartes qui peuvent attaquer : Leader, cartes de Combat et Unisson en mode Action (8-1-1). */
 export function possibleAttackers(s: GameState, player: PlayerId, ctx: GameContext): string[] {
-  // 7-3-4-4-1 : le premier joueur ne peut pas attaquer lors de son premier tour.
-  if (s.turnNumber === 1 && player === s.firstPlayer) return [];
+  // 7-3-4-4-1 : le premier joueur ne peut pas attaquer lors de son premier tour (sauf règle modifiée).
+  if (s.turnNumber === 1 && player === s.firstPlayer && !s.rules.firstTurnAttack) return [];
   const p = s.players[player];
   // Effets « ne peut plus attaquer que X fois ce tour ».
   const limits = s.attackLimits.filter((l) => l.player === player && l.untilTurn >= s.turnNumber);
@@ -201,7 +201,7 @@ export function declareAttack(
   events: GameEvent[],
 ): string | null {
   const player = action.player;
-  if (s.turnNumber === 1 && player === s.firstPlayer) {
+  if (s.turnNumber === 1 && player === s.firstPlayer && !s.rules.firstTurnAttack) {
     return "7-3-4-4-1 : le premier joueur ne peut pas attaquer lors de son premier tour";
   }
   const attacker = findInPlay(s, player, action.attacker);

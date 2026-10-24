@@ -1,7 +1,7 @@
 // Préférences du joueur, mémorisées dans le navigateur (pseudo, thème, réglages par défaut).
 // Si le stockage du navigateur est indisponible, les valeurs par défaut sont utilisées.
 
-import type { CounterPrompt } from "../engine";
+import { normalizeRules, OFFICIAL_RULES, type CounterPrompt, type GameRules } from "../engine";
 
 export type Theme = "auto" | "dark" | "light";
 
@@ -25,10 +25,13 @@ export interface Prefs {
   /** Musique de combat pendant la partie, et son volume (0 à 1). */
   music: boolean;
   musicVolume: number;
+  /** Jouer avec les règles personnalisées (sinon les règles officielles), et ces règles. */
+  useCustomRules: boolean;
+  customRules: GameRules;
 }
 
 const KEY = "dbscg.prefs";
-const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, showNames: true, sound: true, volume: 0.5, animations: true, music: true, musicVolume: 0.3 };
+const DEFAULTS: Prefs = { pseudo: "", theme: "dark", counterPrompt: "always", logHidden: false, showImages: true, showNames: true, sound: true, volume: 0.5, animations: true, music: true, musicVolume: 0.3, useCustomRules: false, customRules: { ...OFFICIAL_RULES } };
 
 export function loadPrefs(): Prefs {
   try {
@@ -47,9 +50,11 @@ export function loadPrefs(): Prefs {
       animations: typeof raw.animations === "boolean" ? raw.animations : DEFAULTS.animations,
       music: typeof raw.music === "boolean" ? raw.music : DEFAULTS.music,
       musicVolume: typeof raw.musicVolume === "number" && raw.musicVolume >= 0 && raw.musicVolume <= 1 ? raw.musicVolume : DEFAULTS.musicVolume,
+      useCustomRules: raw.useCustomRules === true,
+      customRules: normalizeRules(typeof raw.customRules === "object" ? raw.customRules : null),
     };
   } catch {
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, customRules: { ...OFFICIAL_RULES } };
   }
 }
 

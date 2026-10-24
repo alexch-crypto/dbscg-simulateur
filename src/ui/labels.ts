@@ -11,7 +11,9 @@ import type {
   PlayerId,
   PlayerView,
   VisibleCard,
+  GameRules,
 } from "../engine";
+import { OFFICIAL_RULES } from "../engine";
 
 export const COLOR_NAMES: Record<string, string> = {
   red: "rouge",
@@ -378,3 +380,26 @@ export function describeEvent(e: GameEvent, view: PlayerView, db: CardDatabase):
 }
 
 export const otherPlayer = (p: PlayerId): PlayerId => (p === "P1" ? "P2" : "P1");
+
+/** Ce qui change par rapport aux règles officielles (vide : règles officielles). */
+export function rulesChanges(rules: GameRules): string[] {
+  const o = OFFICIAL_RULES;
+  const out: string[] = [];
+  const yes = (b: boolean) => (b ? "oui" : "non");
+  if (rules.allowBanned !== o.allowBanned) out.push("Cartes bannies autorisées");
+  if (rules.ignoreLimited !== o.ignoreLimited) out.push("Cartes limitées sans limite");
+  if (rules.maxCopies !== o.maxCopies) out.push(`${rules.maxCopies} exemplaires max par carte`);
+  if (rules.deckMin !== o.deckMin || rules.deckMax !== o.deckMax) out.push(`Deck de ${rules.deckMin} à ${rules.deckMax} cartes`);
+  if (rules.zDeckMax !== o.zDeckMax) out.push(`Deck Z : ${rules.zDeckMax} cartes max`);
+  if (rules.startingLife !== o.startingLife) out.push(`${rules.startingLife} point(s) de vie`);
+  if (rules.startingHand !== o.startingHand) out.push(`Main de départ : ${rules.startingHand} cartes`);
+  if (rules.mulligan !== o.mulligan) out.push(`Repioche de départ : ${yes(rules.mulligan)}`);
+  if (rules.startingEnergy !== o.startingEnergy) out.push(`${rules.startingEnergy} Énergie(s) au départ`);
+  if (rules.drawPerTurn !== o.drawPerTurn) out.push(`${rules.drawPerTurn} carte(s) piochée(s) par tour`);
+  if (rules.firstTurnDraw !== o.firstTurnDraw) out.push("Le premier joueur pioche à son premier tour");
+  if (rules.chargePerTurn !== o.chargePerTurn) out.push(`${rules.chargePerTurn} Énergie(s) posable(s) par tour`);
+  if (rules.firstTurnAttack !== o.firstTurnAttack) out.push("Le premier joueur peut attaquer à son premier tour");
+  if (rules.awakenedLeaders !== o.awakenedLeaders) out.push("Leaders éveillés dès le début");
+  if (rules.tutorAtStart !== o.tutorAtStart) out.push(`${rules.tutorAtStart} carte(s) au choix dans le deck au début`);
+  return out;
+}

@@ -47,14 +47,16 @@ export function startTurn(s: GameState, player: PlayerId, turnNumber: number, ev
   // 7-2-8 : point de contrôle.
   // 7-2-9 : le joueur actif pioche une carte, sauf le premier joueur à son premier tour (7-2-9-1).
   const isFirstTurnOfFirstPlayer = turnNumber === 1 && player === s.firstPlayer;
-  if (!isFirstTurnOfFirstPlayer) {
-    drawCards(s, player, 1, events);
+  if ((!isFirstTurnOfFirstPlayer || s.rules.firstTurnDraw) && s.rules.drawPerTurn > 0) {
+    drawCards(s, player, s.rules.drawPerTurn, events);
     if (checkDefeat(s, events)) return;
   }
 
   // 7-2-10 : point de contrôle.
-  // 7-2-11 : le joueur actif peut placer une carte de sa main dans sa Zone d'Énergie.
-  s.pending = { type: "CHARGE", player };
+  // 7-2-11 : le joueur actif peut placer une carte de sa main dans sa Zone d'Énergie
+  // (partie personnalisée : plusieurs, ou aucune).
+  if (s.rules.chargePerTurn > 0) s.pending = { type: "CHARGE", player };
+  else startMainPhase(s, events);
 }
 
 /** 7-2-11 : placer (ou non) une carte de la main dans la Zone d'Énergie. */
@@ -98,6 +100,12 @@ export function chargeEnergy(
         { kind: "restore", pending: { type: "MAIN", player: s.turnPlayer } },
         events,
       );
+      return null;
+    }
+    // Partie personnalisée : encore une Énergie à placer ?
+    s.turnUsage["charges"] = (s.turnUsage["charges"] ?? 0) + 1;
+    if (s.turnUsage["charges"] < s.rules.chargePerTurn && p.hand.length > 0) {
+      s.pending = { type: "CHARGE", player: action.player };
       return null;
     }
   }

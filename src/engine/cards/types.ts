@@ -70,6 +70,10 @@ export interface CardDefinition extends CardFace {
   /** Leaders uniquement : face avant (front) et face arrière (back). */
   front?: CardFace;
   back?: CardFace;
+  /** Interdite en partie officielle (liste des cartes bannies). */
+  banned?: boolean;
+  /** Carte limitée : nombre maximum d'exemplaires dans un deck officiel (ex. 1). */
+  limit?: number;
   /** Données à faire confirmer par le joueur (valeurs commençant par "?", listes a_verifier). */
   warnings: string[];
 }

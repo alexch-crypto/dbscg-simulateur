@@ -491,3 +491,15 @@ aside { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .battle-total { color: #fcd34d; }
 .battle-win { color: #4ade80; font-weight: 700; }
 .battle-lose { color: #f87171; font-weight: 700; }
+
+/* Partie personnalisée : réglages du menu Jouer. */
+.rules-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px; }
+.rules-group h3 { margin: 4px 0 6px; font-size: 14px; }
+.rule-num input { width: 80px; }
+.rules-foot { grid-column: 1 / -1; display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.custom-badge { background: var(--accent); color: #1a1a1a; border-radius: 8px; padding: 1px 8px; font-weight: 700; cursor: help; }
+/* Cartes bannies / limitées (constructeur de deck, galerie). */
+.tile { position: relative; }
+.tile-status { position: absolute; left: 4px; bottom: 4px; font-size: 10px; font-weight: 700; border-radius: 6px; padding: 1px 5px; background: #000c; color: #fff; }
+.tile-status.banned { background: #b91c1ccc; }
+.tile-status.limited { background: #b45309cc; }

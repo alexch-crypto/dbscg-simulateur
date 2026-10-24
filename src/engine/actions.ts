@@ -77,10 +77,10 @@ export function applyAction(state: GameState, action: Action, ctx: GameContext):
   let error: string | null = null;
   switch (action.type) {
     case "CHOOSE_FIRST_PLAYER":
-      chooseFirstPlayer(next, action, events);
+      chooseFirstPlayer(next, action, ctx, events);
       break;
     case "MULLIGAN":
-      mulligan(next, action, events);
+      mulligan(next, action, ctx, events);
       break;
     case "CHARGE_ENERGY":
       error = chargeEnergy(next, action, ctx, events);

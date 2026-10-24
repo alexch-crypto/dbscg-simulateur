@@ -40,10 +40,11 @@ import {
   type PlayerView,
   type PlayerZonesView,
   type VisibleCard,
+  type GameRules,
 } from "../engine";
 import { GUEST, HOST, OnlineGuest, OnlineHost, type HostMessage } from "../net/online";
 import { hostRoom, joinRoom, normalizeCode, type GuestLink, type HostLink } from "../net/peer";
-import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName } from "./labels";
+import { COLOR_NAMES, cardName, describeAction, describeEvent, describePending, nameOf, phaseName, rulesChanges } from "./labels";
 import { cardSheet, colorDots, costText, esc, isVisible, KEYWORD_NAMES } from "./common";
 import { DeckStore, type SavedDeck } from "./decks";
 import { gameSettings, goTo, leaveMenus, menuClick, menuInput, renderMenu, type MenuHost, type Mode } from "./menus";
@@ -84,7 +85,7 @@ const decks = new DeckStore([
   { id: "gogeta-base", name: "Gogeta GT (deck de base)", list: gogeta.deck!, builtIn: true },
 ]);
 /** Decks et réglages de la dernière partie locale (pour « Rejouer »). */
-let lastLocal: { decks: Record<PlayerId, SavedDeck>; prompts: Record<PlayerId, CounterPrompt> } | null = null;
+let lastLocal: { decks: Record<PlayerId, SavedDeck>; prompts: Record<PlayerId, CounterPrompt>; rules?: GameRules } | null = null;
 
 let state: GameState | null = null;
 let seed = 0;
@@ -157,12 +158,12 @@ const menuHost: MenuHost = {
     leaveMenus();
     render();
   },
-  startLocal: (chosenMode, chosen, prompts) => {
+  startLocal: (chosenMode, chosen, prompts, rules) => {
     mode = chosenMode;
-    lastLocal = { decks: chosen, prompts };
+    lastLocal = { decks: chosen, prompts, ...(rules ? { rules } : {}) };
     newGame();
   },
-  createRoom: (deck, prompt) => createRoom(deck, prompt),
+  createRoom: (deck, prompt, rules) => createRoom(deck, prompt, rules),
   joinRoom: (code, deck, prompt) => joinGame(code, deck, prompt),
   render: () => showMenu(),
 };
@@ -209,7 +210,7 @@ function leaveOnline(): void {
 }
 
 /** Crée une room : ce navigateur devient l'hôte (P1) et fait tourner le moteur. */
-function createRoom(deck: SavedDeck, prompt: CounterPrompt): void {
+function createRoom(deck: SavedDeck, prompt: CounterPrompt, rules?: GameRules): void {
   leaveOnline();
   // Une partie en ligne remplace la partie locale éventuellement en cours.
   state = null;
@@ -231,6 +232,7 @@ function createRoom(deck: SavedDeck, prompt: CounterPrompt): void {
     },
   );
   onlineHost.names.P1 = prefs.pseudo;
+  onlineHost.rules = rules;
   onlineHost.playmats.P1 = myPlaymat() ?? "";
   hostLink = hostRoom({
     onReady: (code) => {
@@ -320,7 +322,8 @@ function newGame(): void {
   seed = Math.floor(Math.random() * 1_000_000);
   const lists = { P1: lastLocal.decks.P1.list, P2: lastLocal.decks.P2.list };
   const counterPrompt = { ...lastLocal.prompts };
-  const result = createGame({ decks: lists, seed, counterPrompt }, db);
+  const rules = lastLocal.rules;
+  const result = createGame({ decks: lists, seed, counterPrompt, ...(rules ? { rules } : {}) }, db);
   if (!result.ok) {
     netStatus = `Deck invalide : ${result.errors.join(" ; ")}`;
     return showMenu();
@@ -329,7 +332,7 @@ function newGame(): void {
   leaveMenus();
   netStatus = "";
   state = result.state;
-  record = newRecord(seed, lists, counterPrompt);
+  record = newRecord(seed, lists, counterPrompt, rules);
   log = [];
   addToLog(result.events);
   errorMessage = "";
@@ -1215,6 +1218,12 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !settingsBox.hidden) closeGameSettings();
 });
 
+/** Pastille « Partie personnalisée » (le détail des règles modifiées au survol). */
+function customBadge(view: PlayerView): string {
+  const changes = rulesChanges(view.rules);
+  return changes.length ? `<span class="custom-badge" title="${esc(changes.join("\n"))}">🎲 Partie personnalisée</span> · ` : "";
+}
+
 /** Nom affiché d'un joueur : son pseudo en ligne s'il en a un. */
 function playerLabel(p: PlayerId): string {
   const names = onlineHost?.names ?? onlineGuest?.names;
@@ -1283,7 +1292,7 @@ function render(): void {
       <div><b>DBS Masters — simulateur</b>${
         onlineMe() ? ` · en ligne (room ${esc(roomCode)}, vous êtes ${playerLabel(onlineMe()!)})` : ` · graine ${seed}`
       }</div>
-      <div>Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
+      <div>${customBadge(view)}Tour ${view.turnNumber} · joueur actif : <b>${view.turnPlayer}</b> · ${phaseName(view.phase)}</div>
       <div class="header-buttons">
         <button data-new title="Retour au menu">☰ Menu</button>
         <button data-settings title="Son, musique, affichage...">⚙ Paramètres</button>

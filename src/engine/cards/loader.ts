@@ -236,6 +236,12 @@ function readCard(raw: unknown, index: number): { card?: CardDefinition; errors:
     }
   }
 
+  // Statut en tournoi : « "banned": true » (bannie) ou « "limit": 1 » (limitée à 1 exemplaire).
+  if (raw["banned"] === true) card.banned = true;
+  else if (raw["banned"] !== undefined) r.error(`"banned" doit valoir true`);
+  const limit = r.number(raw, "limit", false);
+  if (limit !== undefined) card.limit = limit;
+
   const toCheck = raw["a_verifier"];
   if (Array.isArray(toCheck)) {
     for (const note of toCheck) if (typeof note === "string") r.warnings.push(note);

@@ -2,10 +2,10 @@
 // Cartes (galerie), Paramètres (avec l'aide). Uniquement de l'affichage et des préférences :
 // aucune règle du jeu ici (la validation des decks vient du moteur).
 
-import { MAIN_DECK_MAX, MAIN_DECK_MIN, MAX_COPIES, Z_DECK_MAX, type CardDatabase, type CardDefinition, type CounterPrompt, type PlayerId } from "../engine";
+import { normalizeRules, OFFICIAL_RULES, type CardDatabase, type CardDefinition, type CounterPrompt, type GameRules, type PlayerId } from "../engine";
 import { cardSheet, colorDots, esc, KEYWORD_NAMES, TYPE_NAMES } from "./common";
-import { countOf, deckErrors, deckFromFile, deckToFile, newId, type DeckStore, type SavedDeck } from "./decks";
-import { COLOR_NAMES } from "./labels";
+import { countOf, deckErrors, deckFromFile, deckToFile, FREE_RULES, newId, type DeckStore, type SavedDeck } from "./decks";
+import { COLOR_NAMES, rulesChanges } from "./labels";
 import { applyNames, applyTheme, savePrefs, type Prefs, type Theme } from "./prefs";
 import { clearImages, imageCount, imageUrl, importImages, setImagesEnabled } from "./images";
 import { setFxSettings } from "./fx";
@@ -25,8 +25,8 @@ export interface MenuHost {
   /** Une partie locale est en cours et peut être reprise. */
   canResume(): boolean;
   resume(): void;
-  startLocal(mode: "solo" | "hotseat", decks: Record<PlayerId, SavedDeck>, prompts: Record<PlayerId, CounterPrompt>): void;
-  createRoom(deck: SavedDeck, prompt: CounterPrompt): void;
+  startLocal(mode: "solo" | "hotseat", decks: Record<PlayerId, SavedDeck>, prompts: Record<PlayerId, CounterPrompt>, rules?: GameRules): void;
+  createRoom(deck: SavedDeck, prompt: CounterPrompt, rules?: GameRules): void;
   joinRoom(code: string, deck: SavedDeck, prompt: CounterPrompt): void;
   render(): void;
 }
@@ -84,6 +84,52 @@ function deckColors(deck: SavedDeck, db: CardDatabase): string[] {
 const topBar = (title: string, back: Screen = "home") =>
   `<div class="menu-top"><button class="back" data-nav="${back}">← ${back === "home" ? "Accueil" : "Retour"}</button><h1>${esc(title)}</h1></div>`;
 
+/** Règles choisies dans le menu Jouer : personnalisées, ou officielles. */
+const activeRules = (host: MenuHost): GameRules => (host.prefs.useCustomRules ? host.prefs.customRules : OFFICIAL_RULES);
+
+/** Pastille « bannie » ou « limitée » d'une carte (constructeur de deck, galerie). */
+function statusBadge(def: CardDefinition): string {
+  if (def.banned) return `<span class="tile-status banned" title="Carte bannie : seulement en partie personnalisée">🚫 Bannie</span>`;
+  if (def.limit !== undefined) return `<span class="tile-status limited" title="Limitée à ${def.limit} exemplaire(s) par deck">Limitée ${def.limit}</span>`;
+  return "";
+}
+
+/** Réglages de la partie personnalisée. */
+function rulesPanel(rules: GameRules): string {
+  const num = (key: keyof GameRules, label: string, min: number, max: number) =>
+    `<label class="field rule-num"><span>${label}</span><input type="number" min="${min}" max="${max}" value="${rules[key] as number}" data-rule="${key}"></label>`;
+  const check = (key: keyof GameRules, label: string) =>
+    `<label class="check"><input type="checkbox" data-rule="${key}" ${rules[key] ? "checked" : ""}> ${label}</label>`;
+  const changes = rulesChanges(rules);
+  return `<div class="rules-panel">
+    <div class="rules-group"><h3>Construction du deck</h3>
+      ${check("allowBanned", "Autoriser les cartes bannies")}
+      ${check("ignoreLimited", "Ignorer les limites (cartes limitées, [Ultimate], [Super Combo])")}
+      ${num("maxCopies", "Exemplaires max par carte", 1, 99)}
+      <div class="two">${num("deckMin", "Deck : minimum", 1, 200)}${num("deckMax", "Deck : maximum", 1, 200)}</div>
+      ${num("zDeckMax", "Deck Z : maximum", 0, 50)}
+    </div>
+    <div class="rules-group"><h3>Début de partie</h3>
+      ${num("startingLife", "Points de vie", 1, 30)}
+      ${num("startingHand", "Main de départ", 0, 20)}
+      ${check("mulligan", "Repioche de la main de départ autorisée")}
+      ${num("startingEnergy", "Énergies posées au départ", 0, 15)}
+    </div>
+    <div class="rules-group"><h3>Pendant la partie</h3>
+      ${num("drawPerTurn", "Cartes piochées par tour", 0, 10)}
+      ${check("firstTurnDraw", "Le premier joueur pioche à son premier tour")}
+      ${num("chargePerTurn", "Énergies posables par tour", 0, 10)}
+      ${check("firstTurnAttack", "Le premier joueur peut attaquer à son premier tour")}
+    </div>
+    <div class="rules-group"><h3>Fun</h3>
+      ${check("awakenedLeaders", "Les Leaders commencent éveillés")}
+      ${num("tutorAtStart", "Cartes au choix prises dans son deck au début", 0, 10)}
+    </div>
+    <div class="rules-foot">${changes.length ? `<span class="muted">${changes.length} règle(s) modifiée(s)</span>` : `<span class="muted">Identique aux règles officielles</span>`}
+      <button data-rules-reset>Remettre les règles officielles</button></div>
+  </div>`;
+}
+
 /** Petite tuile de carte pour la galerie et le constructeur de deck. */
 function tile(def: CardDefinition, extra = "", attrs = ""): string {
   const power = def.power !== undefined ? `${def.power / 1000}k` : TYPE_NAMES[def.type] ?? def.type;
@@ -91,13 +137,13 @@ function tile(def: CardDefinition, extra = "", attrs = ""): string {
   const colors = def.front?.colors ?? def.colors;
   const img = imageUrl(def.id);
   if (img) {
-    return `<div class="tile with-img color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}"><img src="${img}" alt="${esc(def.name)}" loading="lazy">${extra}</div>`;
+    return `<div class="tile with-img color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}"><img src="${img}" alt="${esc(def.name)}" loading="lazy">${statusBadge(def)}${extra}</div>`;
   }
   return `<div class="tile color-${colors[0] ?? "none"}" ${attrs} data-cid="${esc(def.id)}">
     <div class="tile-top">${colorDots(colors)}<span class="tile-cost">${esc(cost)}</span></div>
     <div class="tile-name">${esc(def.name)}</div>
     <div class="tile-bottom"><span>${esc(power)}</span>${def.combo ? `<span class="muted">+${def.combo.power / 1000}k</span>` : ""}</div>
-    ${extra}
+    ${statusBadge(def)}${extra}
   </div>`;
 }
 
@@ -149,7 +195,8 @@ function home(host: MenuHost): string {
 
 function play(host: MenuHost): string {
   const decks = host.decks.all();
-  const playable = decks.filter((d) => deckErrors(d, host.db).length === 0);
+  const rules = activeRules(host);
+  const playable = decks.filter((d) => deckErrors(d, host.db, rules).length === 0);
   for (const p of ["P1", "P2"] as const) {
     if (!playable.some((d) => d.id === ui.deckFor[p])) ui.deckFor[p] = playable[0]?.id ?? "";
   }
@@ -171,7 +218,7 @@ function play(host: MenuHost): string {
   const status = host.netStatus();
   const body =
     playable.length === 0
-      ? `<p class="error">Aucun deck jouable : allez dans « Mes decks » pour en construire un.</p>`
+      ? `<p class="error">Aucun deck jouable avec ces règles : allez dans « Mes decks » pour en construire un${host.prefs.useCustomRules ? ", ou changez les règles" : ""}.</p>`
       : ui.mode === "online"
         ? `<div class="panel">
             <h2>Votre deck</h2>${deckSelect("P1", "Deck")}
@@ -182,6 +229,7 @@ function play(host: MenuHost): string {
               <input type="text" placeholder="Code" data-code maxlength="12" value="${esc(ui.code)}">
               <button class="big" data-join>Rejoindre</button>
             </div>
+            <p class="hint">En ligne, ce sont les règles de la personne qui crée la room qui s'appliquent.</p>
             ${status ? `<p class="error">${esc(status)}</p>` : ""}
           </div>`
         : `<div class="panel">
@@ -198,6 +246,14 @@ function play(host: MenuHost): string {
           `<button class="mode-card ${ui.mode === m ? "active" : ""}" data-play-mode="${m}"><b>${title}</b><span class="muted">${text}</span></button>`,
       )
       .join("")}</div>
+    <div class="panel">
+      <h2>Règles</h2>
+      <div class="toolbar">
+        <button class="${host.prefs.useCustomRules ? "" : "primary"}" data-rules-mode="official">Règles officielles</button>
+        <button class="${host.prefs.useCustomRules ? "primary" : ""}" data-rules-mode="custom">🎲 Partie personnalisée</button>
+      </div>
+      ${host.prefs.useCustomRules ? rulesPanel(host.prefs.customRules) : `<p class="hint">Les règles du manuel, comme en tournoi : cartes bannies interdites, cartes limitées respectées.</p>`}
+    </div>
     ${body}
   </div>`;
 }
@@ -205,11 +261,14 @@ function play(host: MenuHost): string {
 function deckSummary(deck: SavedDeck, host: MenuHost): string {
   const leader = host.db.get(deck.list.leader);
   const errors = deckErrors(deck, host.db);
+  const customOnly = errors.length > 0 && deckErrors(deck, host.db, FREE_RULES).length === 0;
   return `<div class="deck-card">
     <div class="deck-head">${colorDots(deckColors(deck, host.db))} <b>${esc(deck.name)}</b>${deck.builtIn ? ` <span class="tag">de base</span>` : ""}</div>
     <div class="muted">Leader : ${esc(leader?.name ?? deck.list.leader)}</div>
     <div class="muted">${countOf(deck.list.main)} cartes · deck Z ${countOf(deck.list.zDeck)}</div>
-    <div class="${errors.length ? "error" : "ok"}">${errors.length ? `⚠ ${errors.length} problème(s)` : "✔ Jouable"}</div>
+    <div class="${errors.length && !customOnly ? "error" : "ok"}">${
+      !errors.length ? "✔ Jouable" : customOnly ? "🎲 Partie personnalisée seulement" : `⚠ ${errors.length} problème(s)`
+    }</div>
     <div class="deck-buttons">
       <button data-deck-open="${esc(deck.id)}">${deck.builtIn ? "Voir" : "Modifier"}</button>
       <button data-deck-dup="${esc(deck.id)}">Dupliquer</button>
@@ -288,6 +347,8 @@ function deckEditor(host: MenuHost): string {
   const db = host.db;
   const readOnly = !!deck.builtIn;
   const errors = deckErrors(deck, db);
+  const freeErrors = deckErrors(deck, db, FREE_RULES);
+  const limits = deck.custom ? FREE_RULES : OFFICIAL_RULES;
   const leaders = sortedCards(db, (d) => d.type === "leader");
   const main = countOf(deck.list.main);
   const z = countOf(deck.list.zDeck);
@@ -308,18 +369,28 @@ function deckEditor(host: MenuHost): string {
               : `<button class="primary" data-deck-save ${ui.dirty ? "" : "disabled"}>${ui.dirty ? "Enregistrer" : "Enregistré ✔"}</button>`
           }
         </div>
+        ${
+          readOnly
+            ? ""
+            : `<label class="check"><input type="checkbox" data-deck-custom ${deck.custom ? "checked" : ""}> Deck sans limites (pour les parties personnalisées)
+            <span class="hint">Cartes bannies, plus de 4 exemplaires, deck de la taille que vous voulez.</span></label>`
+        }
         <label class="field"><span>Leader</span><select data-deck-leader ${readOnly ? "disabled" : ""}>${leaders
           .map((l) => `<option value="${esc(l.id)}" ${l.id === deck.list.leader ? "selected" : ""}>${esc(l.name)} (${esc(l.id)})</option>`)
           .join("")}</select></label>
         ${deckStats(deck, db)}
         ${
-          errors.length
-            ? `<div class="error-box">${errors.map((e) => `<div>⚠ ${esc(e)}</div>`).join("")}</div>`
-            : `<div class="ok">✔ Deck jouable</div>`
+          !errors.length
+            ? `<div class="ok">✔ Deck jouable</div>`
+            : !freeErrors.length
+              ? `<div class="ok">🎲 Jouable en partie personnalisée (selon les règles choisies)</div><div class="error-box">${errors
+                  .map((e) => `<div>Hors règles officielles : ${esc(e)}</div>`)
+                  .join("")}</div>`
+              : `<div class="error-box">${errors.map((e) => `<div>⚠ ${esc(e)}</div>`).join("")}</div>`
         }
-        <h2>Deck principal <span class="muted">${main} / ${MAIN_DECK_MIN}–${MAIN_DECK_MAX}</span></h2>
+        <h2>Deck principal <span class="muted">${main} / ${OFFICIAL_RULES.deckMin}–${OFFICIAL_RULES.deckMax}</span></h2>
         ${deckLines(deck.list.main, db, "main", readOnly)}
-        <h2>Deck Z <span class="muted">${z} / ${Z_DECK_MAX} max</span></h2>
+        <h2>Deck Z <span class="muted">${z} / ${OFFICIAL_RULES.zDeckMax} max</span></h2>
         ${deckLines(deck.list.zDeck, db, "z", readOnly)}
       </section>
       <section class="panel">
@@ -332,7 +403,7 @@ function deckEditor(host: MenuHost): string {
                 <button class="${ui.editorPart === "z" ? "primary" : ""}" data-editor-part="z">Cartes Z</button>
                 <input type="search" placeholder="Rechercher (nom, personnage, origine…)" data-editor-search value="${esc(ui.editorSearch)}">
               </div>
-              <p class="hint">Cliquez sur une carte pour l'ajouter (${MAX_COPIES} exemplaires maximum). Survolez-la pour lire son texte.</p>
+              <p class="hint">Cliquez sur une carte pour l'ajouter (${limits.maxCopies} exemplaires maximum${deck.custom ? "" : ", 1 pour une carte limitée, aucune carte bannie"}). Survolez-la pour lire son texte.</p>
               <div class="tile-grid">${pool
                 .map((d) => {
                   const n = partCounts[d.id] ?? 0;
@@ -494,8 +565,9 @@ function help(): string {
     </details>
     <details><summary>Construire un deck</summary>
       <ul>
-        <li>Un Leader, un deck principal de ${MAIN_DECK_MIN} à ${MAIN_DECK_MAX} cartes, ${MAX_COPIES} exemplaires maximum par carte.</li>
-        <li>Un deck Z de ${Z_DECK_MAX} cartes Z maximum.</li>
+        <li>Un Leader, un deck principal de ${OFFICIAL_RULES.deckMin} à ${OFFICIAL_RULES.deckMax} cartes, ${OFFICIAL_RULES.maxCopies} exemplaires maximum par carte (les cartes limitées : moins ; les cartes bannies : aucune).</li>
+        <li>Un deck Z de ${OFFICIAL_RULES.zDeckMax} cartes Z maximum.</li>
+        <li>En partie personnalisée (menu Jouer), on peut changer ces règles et bien d'autres : points de vie, pioche, Énergies...</li>
         <li>Le site vérifie le deck en direct et explique ce qui ne va pas.</li>
       </ul>
     </details>
@@ -529,16 +601,21 @@ function openEditor(deck: SavedDeck): void {
 }
 
 /** Ajoute (+1) ou retire (-1) un exemplaire d'une carte au deck en cours de modification. */
-function changeCount(spec: string, delta: number): void {
+function changeCount(spec: string, delta: number, db: CardDatabase): void {
   const deck = ui.editing;
   if (!deck || deck.builtIn) return;
   const [which, id] = [spec.slice(0, spec.indexOf(":")), spec.slice(spec.indexOf(":") + 1)];
   const part = which === "z" ? deck.list.zDeck : deck.list.main;
   const n = (part[id] ?? 0) + delta;
   if (delta > 0) {
-    if ((part[id] ?? 0) >= MAX_COPIES) return void (ui.message = `${MAX_COPIES} exemplaires maximum`);
-    if (which === "z" && countOf(deck.list.zDeck) >= Z_DECK_MAX) return;
-    if (which === "main" && countOf(deck.list.main) >= MAIN_DECK_MAX) return;
+    // Deck officiel : limites du manuel (et des listes de cartes bannies / limitées).
+    const limits = deck.custom ? FREE_RULES : OFFICIAL_RULES;
+    const def = db.get(id);
+    if (def?.banned && !deck.custom) return void (ui.message = "Carte bannie : cochez « Deck sans limites » pour l'utiliser en partie personnalisée");
+    const max = def?.limit !== undefined && !deck.custom ? Math.min(def.limit, limits.maxCopies) : limits.maxCopies;
+    if ((part[id] ?? 0) >= max) return void (ui.message = `${max} exemplaire(s) maximum`);
+    if (which === "z" && countOf(deck.list.zDeck) >= limits.zDeckMax) return;
+    if (which === "main" && countOf(deck.list.main) >= limits.deckMax) return;
   }
   if (n <= 0) delete part[id];
   else part[id] = n;
@@ -577,12 +654,12 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
   if (d["start"] !== undefined) {
     const p1 = chosen("P1");
     const p2 = chosen("P2");
-    if (p1 && p2) host.startLocal(ui.mode === "hotseat" ? "hotseat" : "solo", { P1: p1, P2: p2 }, { ...ui.prompts! });
+    if (p1 && p2) host.startLocal(ui.mode === "hotseat" ? "hotseat" : "solo", { P1: p1, P2: p2 }, { ...ui.prompts! }, host.prefs.useCustomRules ? { ...host.prefs.customRules } : undefined);
     return true;
   }
   if (d["host"] !== undefined) {
     const deck = chosen("P1");
-    if (deck) host.createRoom(deck, ui.prompts!.P1);
+    if (deck) host.createRoom(deck, ui.prompts!.P1, host.prefs.useCustomRules ? { ...host.prefs.customRules } : undefined);
     return true;
   }
   if (d["join"] !== undefined) {
@@ -590,6 +667,18 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
     const input = document.querySelector<HTMLInputElement>("[data-code]");
     ui.code = input?.value ?? ui.code;
     if (deck) host.joinRoom(ui.code, deck, ui.prompts!.P1);
+    return true;
+  }
+  if (d["rulesMode"] !== undefined) {
+    host.prefs.useCustomRules = d["rulesMode"] === "custom";
+    savePrefs(host.prefs);
+    host.render();
+    return true;
+  }
+  if (d["rulesReset"] !== undefined) {
+    host.prefs.customRules = { ...OFFICIAL_RULES };
+    savePrefs(host.prefs);
+    host.render();
     return true;
   }
   if (d["deckNew"] !== undefined) {
@@ -632,7 +721,7 @@ export function menuClick(el: HTMLElement, host: MenuHost): boolean {
     return true;
   }
   if (d["deckPlus"] !== undefined || d["deckMinus"] !== undefined) {
-    changeCount(d["deckPlus"] ?? d["deckMinus"]!, d["deckPlus"] !== undefined ? 1 : -1);
+    changeCount(d["deckPlus"] ?? d["deckMinus"]!, d["deckPlus"] !== undefined ? 1 : -1, host.db);
     host.render();
     return true;
   }
@@ -715,6 +804,16 @@ export function menuInput(el: HTMLInputElement, host: MenuHost, final: boolean):
   if (!final) return false;
   if (d["deckFor"] !== undefined) ui.deckFor[d["deckFor"] as PlayerId] = el.value;
   else if (d["prompt"] !== undefined) ui.prompts![d["prompt"] as PlayerId] = el.checked ? "always" : "only_if_playable";
+  else if (d["rule"] !== undefined) {
+    // Réglage de la partie personnalisée (valeur ramenée dans ses bornes par le moteur).
+    const key = d["rule"] as keyof GameRules;
+    const value = el.type === "checkbox" ? el.checked : Number(el.value);
+    prefs.customRules = normalizeRules({ ...prefs.customRules, [key]: value });
+    savePrefs(prefs);
+  } else if (d["deckCustom"] !== undefined && ui.editing) {
+    ui.editing.custom = el.checked;
+    ui.dirty = true;
+  }
   else if (d["deckLeader"] !== undefined && ui.editing) {
     ui.editing.list.leader = el.value;
     ui.dirty = true;

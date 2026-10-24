@@ -3,7 +3,7 @@ import { validateDeck } from "../cards/validate-deck";
 import type { GameEvent } from "../protocol";
 import { shuffleInPlace, type RngHolder } from "../rng";
 import { startSetup } from "../rules/setup";
-import { PLAYER_IDS, type CardInstance, type CounterPrompt, type GameState, type PlayerId, type PlayerState } from "./types";
+import { normalizeRules, PLAYER_IDS, type CardInstance, type CounterPrompt, type GameRules, type GameState, type PlayerId, type PlayerState } from "./types";
 
 export interface NewGameInput {
   decks: Record<PlayerId, DeckList>;
@@ -14,6 +14,8 @@ export interface NewGameInput {
    * s'arrête à chaque fenêtre de contre, pour que l'adversaire ne puisse rien deviner.
    */
   counterPrompt?: Partial<Record<PlayerId, CounterPrompt>>;
+  /** Partie personnalisée : règles modifiées (absentes : règles officielles). */
+  rules?: Partial<GameRules>;
 }
 
 export type CreateGameResult =
@@ -27,8 +29,9 @@ export type CreateGameResult =
  */
 export function createGame(input: NewGameInput, db: CardDatabase): CreateGameResult {
   const errors: string[] = [];
+  const rules = normalizeRules(input.rules);
   for (const p of PLAYER_IDS) {
-    for (const e of validateDeck(input.decks[p], db)) errors.push(`${p} : ${e}`);
+    for (const e of validateDeck(input.decks[p], db, rules)) errors.push(`${p} : ${e}`);
   }
   if (errors.length > 0) return { ok: false, errors };
 
@@ -99,6 +102,7 @@ export function createGame(input: NewGameInput, db: CardDatabase): CreateGameRes
     playedFrom: {},
     endOfTurn: [],
     nextDiscounts: [],
+    rules,
     settings: {
       counterPrompt: { P1: input.counterPrompt?.P1 ?? "always", P2: input.counterPrompt?.P2 ?? "always" },
     },

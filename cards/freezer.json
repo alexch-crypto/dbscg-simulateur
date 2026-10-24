@@ -101,6 +101,7 @@
       "id": "BT1-107",
       "type": "extra",
       "name": "Soif de sang glaciale",
+      "limit": 1,
       "colors": ["yellow"],
       "cost": { "total": 1, "specified": { "yellow": 1 } },
       "keywords": [],

@@ -1,7 +1,7 @@
 // Decks du joueur : le deck de base (fourni avec le site, non modifiable) et les decks créés,
 // mémorisés dans le navigateur. Import / export en fichier JSON pour les échanger.
 
-import { validateDeck, type CardDatabase, type DeckList } from "../engine";
+import { validateDeck, type CardDatabase, type DeckList, normalizeRules, type GameRules } from "../engine";
 
 export interface SavedDeck {
   id: string;
@@ -9,6 +9,8 @@ export interface SavedDeck {
   list: DeckList;
   /** Deck fourni avec le site : on peut le dupliquer, pas le modifier. */
   builtIn?: boolean;
+  /** Deck « sans limites », pour les parties personnalisées (cartes bannies, plus d'exemplaires...). */
+  custom?: boolean;
 }
 
 const KEY = "dbscg.decks";
@@ -84,8 +86,11 @@ function isSavedDeck(v: unknown): v is SavedDeck {
 /** Nombre total de cartes d'une partie du deck. */
 export const countOf = (part: Record<string, number>): number => Object.values(part).reduce((a, b) => a + b, 0);
 
-/** Erreurs de construction du deck (vide si le deck est jouable). */
-export const deckErrors = (deck: SavedDeck, db: CardDatabase): string[] => validateDeck(deck.list, db);
+/** Règles les plus larges d'une partie personnalisée : ce qu'un deck « sans limites » peut contenir. */
+export const FREE_RULES: GameRules = normalizeRules({ allowBanned: true, ignoreLimited: true, maxCopies: 99, deckMin: 1, deckMax: 200, zDeckMax: 50 });
+
+/** Erreurs de construction du deck selon des règles (officielles par défaut ; vide si jouable). */
+export const deckErrors = (deck: SavedDeck, db: CardDatabase, rules?: GameRules): string[] => validateDeck(deck.list, db, rules);
 
 /** Contenu du fichier exporté. */
 export function deckToFile(deck: SavedDeck): string {

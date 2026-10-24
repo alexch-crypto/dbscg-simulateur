@@ -161,7 +161,9 @@ export type Continuation =
   /** 9-7-3-5 : un maillon de la chaîne de contres est résolu, passer au suivant. */
   | { kind: "counter_chain" }
   /** 8-1-1 : le coût supplémentaire d'une attaque (« à moins de ... ») est payé, l'attaque continue. */
-  | { kind: "attack_after_tax" };
+  | { kind: "attack_after_tax" }
+  /** Partie personnalisée : cartes au choix de la mise en place, puis le joueur suivant (ou le 1er tour). */
+  | { kind: "setup_tutor"; next: PlayerId | null };
 
 /** Type de [Contre] (22-10-2-1). */
 export type CounterOn = "play" | "attack" | "counter";
@@ -454,5 +456,97 @@ export interface GameState {
   nextDiscounts: NextDiscount[];
   /** Réglages choisis par les joueurs au début de la partie. */
   settings: { counterPrompt: Record<PlayerId, CounterPrompt> };
+  /** Règles de la partie : officielles, ou modifiées (partie personnalisée). */
+  rules: GameRules;
   result: GameResult | null;
+}
+
+/**
+ * Règles modifiables d'une partie personnalisée. Les valeurs officielles sont dans OFFICIAL_RULES.
+ */
+export interface GameRules {
+  // Construction du deck
+  /** Cartes bannies autorisées. */
+  allowBanned: boolean;
+  /** Limites des cartes limitées (ex. 1 exemplaire) ignorées. */
+  ignoreLimited: boolean;
+  /** Exemplaires maximum d'une même carte (6-1-5-1 : 4). */
+  maxCopies: number;
+  /** Taille du deck principal (6-1-3 : 50 à 60) et maximum du deck Z (6-1-4 : 10). */
+  deckMin: number;
+  deckMax: number;
+  zDeckMax: number;
+  // Début de partie
+  /** Cartes de Vie (6-2-1-10 : 8). */
+  startingLife: number;
+  /** Main de départ (6-2-1-9 : 6). */
+  startingHand: number;
+  /** Repioche de la main de départ permise (6-2-1-9). */
+  mulligan: boolean;
+  /** Énergies placées depuis le dessus du deck avant le premier tour (officiel : 0). */
+  startingEnergy: number;
+  // Pendant la partie
+  /** Cartes piochées au début de chaque tour (7-2-9 : 1). */
+  drawPerTurn: number;
+  /** Le premier joueur pioche aussi à son premier tour (7-2-9-1 : non). */
+  firstTurnDraw: boolean;
+  /** Cartes qu'on peut placer en Énergie à chaque phase de Recharge (7-2-11 : 1). */
+  chargePerTurn: number;
+  /** Le premier joueur peut attaquer à son premier tour (7-3-4-4-1 : non). */
+  firstTurnAttack: boolean;
+  // Fun
+  /** Les Leaders commencent éveillés (côté dos). */
+  awakenedLeaders: boolean;
+  /** Cartes au choix prises dans son deck avant le premier tour (0 : aucune). */
+  tutorAtStart: number;
+}
+
+export const OFFICIAL_RULES: Readonly<GameRules> = {
+  allowBanned: false,
+  ignoreLimited: false,
+  maxCopies: 4,
+  deckMin: 50,
+  deckMax: 60,
+  zDeckMax: 10,
+  startingLife: 8,
+  startingHand: 6,
+  mulligan: true,
+  startingEnergy: 0,
+  drawPerTurn: 1,
+  firstTurnDraw: false,
+  chargePerTurn: 1,
+  firstTurnAttack: false,
+  awakenedLeaders: false,
+  tutorAtStart: 0,
+};
+
+/** Règles complètes à partir de réglages partiels, avec des valeurs ramenées dans des bornes sûres. */
+export function normalizeRules(partial?: Partial<GameRules> | null): GameRules {
+  const rules: GameRules = { ...OFFICIAL_RULES };
+  if (!partial) return rules;
+  const int = (value: unknown, min: number, max: number, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback;
+  const bool = (value: unknown, fallback: boolean) => (typeof value === "boolean" ? value : fallback);
+  rules.allowBanned = bool(partial.allowBanned, rules.allowBanned);
+  rules.ignoreLimited = bool(partial.ignoreLimited, rules.ignoreLimited);
+  rules.maxCopies = int(partial.maxCopies, 1, 99, rules.maxCopies);
+  rules.deckMin = int(partial.deckMin, 1, 200, rules.deckMin);
+  rules.deckMax = int(partial.deckMax, rules.deckMin, 200, Math.max(rules.deckMax, rules.deckMin));
+  rules.zDeckMax = int(partial.zDeckMax, 0, 50, rules.zDeckMax);
+  rules.startingLife = int(partial.startingLife, 1, 30, rules.startingLife);
+  rules.startingHand = int(partial.startingHand, 0, 20, rules.startingHand);
+  rules.mulligan = bool(partial.mulligan, rules.mulligan);
+  rules.startingEnergy = int(partial.startingEnergy, 0, 15, rules.startingEnergy);
+  rules.drawPerTurn = int(partial.drawPerTurn, 0, 10, rules.drawPerTurn);
+  rules.firstTurnDraw = bool(partial.firstTurnDraw, rules.firstTurnDraw);
+  rules.chargePerTurn = int(partial.chargePerTurn, 0, 10, rules.chargePerTurn);
+  rules.firstTurnAttack = bool(partial.firstTurnAttack, rules.firstTurnAttack);
+  rules.awakenedLeaders = bool(partial.awakenedLeaders, rules.awakenedLeaders);
+  rules.tutorAtStart = int(partial.tutorAtStart, 0, 10, rules.tutorAtStart);
+  return rules;
+}
+
+/** Les règles sont-elles exactement les règles officielles ? */
+export function isOfficial(rules: GameRules): boolean {
+  return (Object.keys(OFFICIAL_RULES) as (keyof GameRules)[]).every((k) => rules[k] === OFFICIAL_RULES[k]);
 }
